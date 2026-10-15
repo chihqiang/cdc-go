@@ -47,6 +47,13 @@ func NewKafkaOutput(cfg KafkaConfig) (*KafkaOutput, error) {
 		RequiredAcks: kafka.RequireAll,
 		// Whether the send is asynchronous, false means synchronous sending
 		Async: false,
+		// Ask the broker to create the topic when it is missing. Without it the
+		// metadata request carries allow_auto_topic_creation=false and every
+		// send fails with UnknownTopicOrPartition, whatever the broker's
+		// auto.create.topics.enable says. The creation is still in flight when
+		// the first answer arrives, so that first attempt fails and the retry
+		// loop in SendWithRetry is what delivers the event.
+		AllowAutoTopicCreation: true,
 		// Send is called with a single message at a time, so a batch can never
 		// hold more than one: flushing it as soon as it is full writes it right
 		// away, where the default BatchTimeout would make every event wait out

@@ -1,0 +1,202 @@
+# kubectl apply -f deploy/k8s/rocketmq.yml
+#
+# Same single broker layout as deploy/compose/rocketmq.yml: one NameServer, one
+# broker.
+# In cluster addresses: rocketmq-nameserver.kube-middleware:9876 (NameServer),
+#                       rocketmq-broker.kube-middleware:10911 (broker)
+#
+# The broker is a StatefulSet because commitlog and consume queue are bound to a
+# fixed broker name and to the volume; a stable pod name keeps them together.
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: rocketmq-nameserver
+  name: rocketmq-nameserver-headless
+  namespace: kube-middleware
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: nameserver
+      port: 9876
+      targetPort: nameserver
+  selector:
+    app: rocketmq-nameserver
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: rocketmq-nameserver
+  name: rocketmq-nameserver
+  namespace: kube-middleware
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rocketmq-nameserver
+  serviceName: rocketmq-nameserver-headless
+  # No volumeClaimTemplates: the NameServer only keeps the routing table in
+  # memory. It stays a StatefulSet to keep the stack uniform and the pod name
+  # predictable to address from other manifests.
+  template:
+    metadata:
+      labels:
+        app: rocketmq-nameserver
+    spec:
+      containers:
+        - name: rocketmq-nameserver
+          image: apache/rocketmq:4.9.7
+          command:
+            - sh
+            - mqnamesrv
+          env:
+            - name: JAVA_OPT
+              value: -Duser.timezone=Asia/Shanghai
+          ports:
+            - containerPort: 9876
+              name: nameserver
+          readinessProbe:
+            tcpSocket:
+              port: nameserver
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: nameserver
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: rocketmq-nameserver
+  name: rocketmq-nameserver
+  namespace: kube-middleware
+spec:
+  ports:
+    - name: nameserver
+      port: 9876
+      targetPort: nameserver
+  selector:
+    app: rocketmq-nameserver
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: rocketmq-broker
+  name: rocketmq-broker-headless
+  namespace: kube-middleware
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: broker
+      port: 10911
+      targetPort: broker
+    - name: broker-vip
+      port: 10909
+      targetPort: broker-vip
+  selector:
+    app: rocketmq-broker
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: rocketmq-broker
+  name: rocketmq-broker
+  namespace: kube-middleware
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rocketmq-broker
+  serviceName: rocketmq-broker-headless
+  template:
+    metadata:
+      labels:
+        app: rocketmq-broker
+    spec:
+      # Matches the rocketmq user of the image, the store has to be writable by it.
+      securityContext:
+        fsGroup: 3000
+      containers:
+        - name: rocketmq-broker
+          image: apache/rocketmq:4.9.7
+          # autoCreateTopicEnable lets the broker create cdc-trigger-events on
+          # the first send, so the topic does not have to exist beforehand.
+          command:
+            - sh
+            - mqbroker
+            - '-n'
+            - rocketmq-nameserver:9876
+            - autoCreateTopicEnable=true
+          env:
+            - name: JAVA_OPT
+              value: -Duser.timezone=Asia/Shanghai
+            - name: NAMESRV_ADDR
+              value: rocketmq-nameserver:9876
+          ports:
+            - containerPort: 10911
+              name: broker
+            - containerPort: 10909
+              name: broker-vip
+          volumeMounts:
+            # Default storePathRootDir of the image, holds commitlog and consume queue.
+            - mountPath: /home/rocketmq/store
+              name: data
+          readinessProbe:
+            tcpSocket:
+              port: broker
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: broker
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: rocketmq-broker
+  name: rocketmq-broker
+  namespace: kube-middleware
+spec:
+  ports:
+    - name: broker
+      port: 10911
+      targetPort: broker
+    - name: broker-vip
+      port: 10909
+      targetPort: broker-vip
+  selector:
+    app: rocketmq-broker

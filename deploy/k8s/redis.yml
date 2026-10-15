@@ -1,0 +1,114 @@
+# kubectl apply -f deploy/k8s/redis.yml
+#
+# Redis serves both roles of the configuration file: store.type=redis keeps the
+# binlog offsets here, output.type=redis publishes the events here.
+# In cluster address: redis.kube-middleware:6379
+#
+# StatefulSet because the AOF/RDB files are bound to the instance: a stable pod
+# name (redis-0) keeps the volume, and the ordinal identity survives restarts.
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: redis-store
+  # Governing service of the StatefulSet: gives the pod the stable DNS name
+  # redis-0.redis-headless.kube-middleware.svc.cluster.local.
+  name: redis-headless
+  namespace: kube-middleware
+spec:
+  clusterIP: None
+  # Publish the address even before the probe passes: without it a client that
+  # resolves the pod during startup would keep failing on an empty answer.
+  publishNotReadyAddresses: true
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+  selector:
+    app: redis-store
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: redis-store
+  name: redis
+  namespace: kube-middleware
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-store
+  serviceName: redis-headless
+  template:
+    metadata:
+      labels:
+        app: redis-store
+    spec:
+      # The official image runs as the redis user (uid 999), the volume has to be
+      # writable by it.
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          # appendonly keeps the offsets usable after a restart, rdb snapshots
+          # alone would lose the writes of the last interval.
+          args:
+            - --appendonly
+            - 'yes'
+          ports:
+            - containerPort: 6379
+              name: redis
+          volumeMounts:
+            - mountPath: /data
+              name: data
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 512Mi
+  # One claim per replica, kept when the StatefulSet is deleted so the offsets
+  # survive an uninstall/upgrade cycle of the middleware manifests.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        # No storageClassName on purpose: the cluster default is used. Set it when
+        # the default StorageClass cannot be bound automatically.
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: redis-store
+  name: redis
+  namespace: kube-middleware
+spec:
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+  selector:
+    app: redis-store

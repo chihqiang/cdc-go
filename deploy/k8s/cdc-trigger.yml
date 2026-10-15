@@ -1,0 +1,118 @@
+# kubectl apply -f deploy/k8s/cdc-trigger.yml
+#
+# The application itself. A Deployment is right here: the process keeps no state
+# of its own, the binlog offset lives where store.* points to (a file on a volume
+# or redis) and every output is a remote service.
+# The configuration file it reads is the copy baked into the image at
+# /app/config.yml, whose values are filled in from the environment below.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: cdc-trigger
+  name: cdc-trigger
+  namespace: kube-middleware
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: cdc-trigger
+  template:
+    metadata:
+      labels:
+        app: cdc-trigger
+    spec:
+      containers:
+        - env:
+            # One variable per placeholder of the ${VAR} / ${VAR:-fallback}
+            # references in /app/config.yml. A value that should be a list
+            # (e.g. source.mysql.exclude_table_regex) cannot come from here and
+            # stays in the configuration file.
+            #
+            # Every endpoint below is the Service of the matching manifest in
+            # this directory: same namespace, so the short name resolves.
+            #
+            # ---- source ----
+            # MySQL is deployed independently of these manifests: point the
+            # address at that instance, loopback inside the pod reaches nothing.
+            - name: SOURCE_TYPE
+              value: mysql
+            - name: SOURCE_MYSQL_ADDR
+              value: '127.0.0.1:3306'
+            - name: SOURCE_MYSQL_USER
+              value: root
+            - name: SOURCE_MYSQL_PASSWORD
+              value: '123456'
+            # ---- offset store ----
+            # type=file writes into STORE_FILE_DIR inside the pod, so the offsets
+            # are gone on every restart unless that directory gets a volume.
+            # Switch type to redis (address below) to keep them outside the pod.
+            - name: STORE_TYPE
+              value: file
+            - name: STORE_FILE_DIR
+              value: runtime
+            - name: STORE_REDIS_ADDR
+              value: redis.kube-middleware:6379
+            # The redis of deploy/k8s/redis.yml has no password, keep this empty.
+            - name: STORE_REDIS_PASSWORD
+              value: ''
+            - name: STORE_REDIS_DB
+              value: '0'
+            # ---- output ----
+            # type picks which endpoint group below is read at all, stdout is the
+            # default: set it to kafka / redis / rabbitmq / rocketmq / pulsar for
+            # the matching block to be used.
+            - name: OUTPUT_TYPE
+              value: stdout
+            - name: OUTPUT_KAFKA_BROKERS
+              value: kafka.kube-middleware:9092
+            - name: OUTPUT_KAFKA_TOPIC
+              value: cdc-trigger-events
+            - name: OUTPUT_RABBITMQ_URL
+              value: amqp://guest:guest@rabbitmq.kube-middleware:5672/
+            - name: OUTPUT_RABBITMQ_EXCHANGE
+              value: cdc-trigger-exchange
+            - name: OUTPUT_RABBITMQ_EXCHANGE_TYPE
+              value: direct
+            - name: OUTPUT_RABBITMQ_ROUTING_KEY
+              value: cdc-trigger-events
+            - name: OUTPUT_RABBITMQ_QUEUE
+              value: cdc-trigger-events
+            - name: OUTPUT_REDIS_ADDR
+              value: redis.kube-middleware:6379
+            - name: OUTPUT_REDIS_PASSWORD
+              value: ''
+            - name: OUTPUT_REDIS_DB
+              value: '0'
+            - name: OUTPUT_REDIS_KEY
+              value: cdc-trigger-events
+            - name: OUTPUT_ROCKETMQ_SERVERS
+              value: rocketmq-nameserver.kube-middleware:9876
+            - name: OUTPUT_ROCKETMQ_TOPIC
+              value: cdc-trigger-events
+            - name: OUTPUT_ROCKETMQ_GROUP
+              value: cdc-trigger-group
+            - name: OUTPUT_ROCKETMQ_NAMESPACE
+              value: ''
+            - name: OUTPUT_ROCKETMQ_ACCESS_KEY
+              value: ''
+            - name: OUTPUT_ROCKETMQ_SECRET_KEY
+              value: ''
+            - name: OUTPUT_PULSAR_URL
+              value: pulsar://pulsar.kube-middleware:6650
+            - name: OUTPUT_PULSAR_TOPIC
+              value: cdc-trigger-events
+            - name: OUTPUT_PULSAR_TOKEN
+              value: ''
+          image: zhiqiangwang/app:cdc-trigger
+          imagePullPolicy: Always
+          name: cdc-trigger
+          resources:
+            limits:
+              cpu: '1'
+              memory: 500Mi
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30

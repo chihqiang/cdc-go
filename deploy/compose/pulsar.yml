@@ -1,5 +1,5 @@
-# docker-compose -f tests/pulsar.yml up -d
-# docker-compose -f tests/pulsar.yml down
+# docker-compose -f deploy/compose/pulsar.yml up -d
+# docker-compose -f deploy/compose/pulsar.yml down
 services:
   mysql:
     image: mysql:8.0

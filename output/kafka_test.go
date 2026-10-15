@@ -19,6 +19,9 @@ func TestNewKafkaOutput(t *testing.T) {
 	assert.NotNil(t, out)
 	assert.Equal(t, "test-topic", out.config.Topic)
 	assert.Equal(t, []string{"127.0.0.1:9092"}, out.config.Brokers)
+	// A missing topic has to be created by the broker on the first send,
+	// otherwise every send fails until someone creates it by hand.
+	assert.True(t, out.writer.AllowAutoTopicCreation)
 }
 
 func TestKafkaOutput_Send_InvalidJSON(t *testing.T) {
