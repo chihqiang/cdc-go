@@ -18,11 +18,22 @@ func SetupComponents(cfg *config.Config) (source.ISource, store.IStore, output.I
 	}
 	iSource, err := source.NewSource(cfg.Source)
 	if err != nil {
+		// The store was already created, so close it to avoid a leak.
+		if cerr := iStore.Close(); cerr != nil {
+			logx.Error("failed to close store after source creation error: %v", cerr)
+		}
 		return nil, nil, nil, fmt.Errorf("failed to create source: %w", err)
 	}
 	iSource.WithStore(iStore)
 	iOutput, err := output.NewOutput(cfg.Output)
 	if err != nil {
+		// Both store and source were already created, so close them.
+		if cerr := iSource.Close(); cerr != nil {
+			logx.Error("failed to close source after output creation error: %v", cerr)
+		}
+		if cerr := iStore.Close(); cerr != nil {
+			logx.Error("failed to close store after output creation error: %v", cerr)
+		}
 		return nil, nil, nil, fmt.Errorf("failed to create output: %w", err)
 	}
 	return iSource, iStore, iOutput, nil

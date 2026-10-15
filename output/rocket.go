@@ -3,7 +3,9 @@ package output
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/apache/rocketmq-client-go/v2"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
@@ -29,15 +31,22 @@ type RocketMQConfig struct {
 	SecretKey string `json:"secret_key"`
 }
 
-// RocketMQOutput RocketMQ implementation that satisfies the IOutput interface
+// RocketMQOutput RocketMQ output implementation.
+//
+// The producer is kept for the lifetime of the process and rebuilt when the
+// broker closes the connection, so a restart of RocketMQ does not leave the
+// output unable to publish ever again.
 type RocketMQOutput struct {
 	cfg      RocketMQConfig
+	options  []producer.Option
+
+	mu       sync.Mutex
 	producer rocketmq.Producer
+	closed   bool
 }
 
-// NewRocketMQOutput Creates a RocketMQOutput from the given configuration
-func NewRocketMQOutput(cfg RocketMQConfig) (*RocketMQOutput, error) {
-	// Create producer options
+// buildOptions creates the producer option list from the configuration.
+func buildOptions(cfg RocketMQConfig) []producer.Option {
 	options := []producer.Option{
 		producer.WithNsResolver(primitive.NewPassthroughResolver(cfg.Servers)),
 		producer.WithRetry(cfg.Retry),
@@ -54,22 +63,61 @@ func NewRocketMQOutput(cfg RocketMQConfig) (*RocketMQOutput, error) {
 			SecretKey: cfg.SecretKey,
 		}))
 	}
-	// Create producer
-	p, err := rocketmq.NewProducer(options...)
+	return options
+}
+
+// NewRocketMQOutput Creates a RocketMQOutput from the given configuration
+func NewRocketMQOutput(cfg RocketMQConfig) (*RocketMQOutput, error) {
+	options := buildOptions(cfg)
+	p, err := createAndStartProducer(options)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create RocketMQ producer: %w", err)
-	}
-	// Start the producer
-	if err := p.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start RocketMQ producer: %w", err)
+		return nil, err
 	}
 	return &RocketMQOutput{
 		cfg:      cfg,
+		options:  options,
 		producer: p,
 	}, nil
 }
 
-// Send Serializes the EventData to a JSON string and sends it to RocketMQ
+// createAndStartProducer creates a producer from the options and starts it.
+func createAndStartProducer(options []producer.Option) (rocketmq.Producer, error) {
+	p, err := rocketmq.NewProducer(options...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create RocketMQ producer: %w", err)
+	}
+	if err := p.Start(); err != nil {
+		_ = p.Shutdown()
+		return nil, fmt.Errorf("failed to start RocketMQ producer: %w", err)
+	}
+	return p, nil
+}
+
+// reconnect replaces a producer that is no longer usable.
+func (r *RocketMQOutput) reconnect() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.closed {
+		return errors.New("the RocketMQ output is closed")
+	}
+
+	// Shut down the old producer before creating a new one.
+	if r.producer != nil {
+		_ = r.producer.Shutdown()
+		r.producer = nil
+	}
+
+	p, err := createAndStartProducer(r.options)
+	if err != nil {
+		return fmt.Errorf("failed to reconnect to RocketMQ: %w", err)
+	}
+	r.producer = p
+	return nil
+}
+
+// Send Serializes the EventData to a JSON string and sends it to RocketMQ.
+// If the send fails, it reconnects once and retries before returning the error.
 func (r *RocketMQOutput) Send(ctx context.Context, event types.EventData) error {
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -79,11 +127,58 @@ func (r *RocketMQOutput) Send(ctx context.Context, event types.EventData) error 
 		Topic: r.cfg.Topic,
 		Body:  data,
 	}
-	_, err = r.producer.SendSync(ctx, msg)
-	return err
+
+	r.mu.Lock()
+	producer := r.producer
+	closed := r.closed
+	r.mu.Unlock()
+
+	if closed {
+		return errors.New("the RocketMQ output is closed")
+	}
+	if producer == nil {
+		if err := r.reconnect(); err != nil {
+			return err
+		}
+		r.mu.Lock()
+		producer = r.producer
+		r.mu.Unlock()
+	}
+
+	_, err = producer.SendSync(ctx, msg)
+	if err == nil {
+		return nil
+	}
+
+	sendErr := fmt.Errorf("failed to send message to RocketMQ topic %s: %w", r.cfg.Topic, err)
+
+	// The producer may have been disconnected by the broker. Reconnect and
+	// try once more so this event does not go with it.
+	if rerr := r.reconnect(); rerr != nil {
+		return fmt.Errorf("%w (reconnect failed: %v)", sendErr, rerr)
+	}
+
+	r.mu.Lock()
+	producer = r.producer
+	r.mu.Unlock()
+
+	if _, perr := producer.SendSync(ctx, msg); perr != nil {
+		return fmt.Errorf("%w (the retry on the new connection failed: %v)", sendErr, perr)
+	}
+	return nil
 }
 
 // Close Closes the RocketMQ producer
 func (r *RocketMQOutput) Close() error {
-	return r.producer.Shutdown()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.closed {
+		return nil
+	}
+	r.closed = true
+	if r.producer != nil {
+		return r.producer.Shutdown()
+	}
+	return nil
 }

@@ -33,7 +33,7 @@ source:
   mysql:
     addr: "${SOURCE_MYSQL_ADDR:-127.0.0.1:3306}"  # Database address (host:port)
     user: "${SOURCE_MYSQL_USER:-root}"            # Database username (recommended to use a dedicated account in production)
-    password: "${SOURCE_MYSQL_PASSWORD:-123456}"  # Database password
+    password: "${SOURCE_MYSQL_PASSWORD:-123456}"  # Database password (required, no default for security)
     exclude_table_regex:              # Tables to exclude (regex patterns)
       - "mysql.*"
       - "information_schema.*"

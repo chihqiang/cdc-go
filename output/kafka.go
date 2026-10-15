@@ -47,6 +47,11 @@ func NewKafkaOutput(cfg KafkaConfig) (*KafkaOutput, error) {
 		RequiredAcks: kafka.RequireAll,
 		// Whether the send is asynchronous, false means synchronous sending
 		Async: false,
+		// Send is called with a single message at a time, so a batch can never
+		// hold more than one: flushing it as soon as it is full writes it right
+		// away, where the default BatchTimeout would make every event wait out
+		// a whole second.
+		BatchSize: 1,
 	}
 	return &KafkaOutput{
 		writer: writer,
@@ -68,6 +73,11 @@ func (k *KafkaOutput) Send(ctx context.Context, event types.EventData) error {
 	if err != nil {
 		return err
 	}
+	// Add a 30s timeout so a broker that is unreachable does not leave
+	// the consumer blocked forever: the retry loop in SendWithRetry will
+	// retry on this timeout as it would on any other error.
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	return k.writer.WriteMessages(ctx, kafka.Message{
 		Value: eventValue,
 		Time:  time.Now(),

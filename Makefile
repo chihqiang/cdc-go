@@ -3,13 +3,11 @@ OUTPUT := cdc-trigger
 MAIN := cmd/cdc-trigger/main.go
 # make build CDC_TRIGGER_VERSION=v1.0.0
 build:
-
 	@echo "Building $(OUTPUT) with version $(CDC_TRIGGER_VERSION) ..."
 	GO111MODULE=on CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(CDC_TRIGGER_VERSION)" -o $(OUTPUT) $(MAIN)
 	@echo "Build complete: $(OUTPUT)"
 
 check:
-
 	@echo "Running linters..."
 	@if ! command -v golangci-lint >/dev/null 2>&1; then \
 		echo "Installing golangci-lint..."; \
@@ -33,7 +31,6 @@ check:
 	@go mod tidy
 
 test:
-
 	@echo "Running tests..."
 	go test -v -coverpkg=./... -race -covermode=atomic -coverprofile=coverage.txt ./... -run . -timeout=2m
 	@echo "Checking git status..."

@@ -4,117 +4,261 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/chihqiang/cdc-trigger/types"
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNormalizeRabbitConfig(t *testing.T) {
-	// The routing key cannot default to the queue name in the tag, so it is
-	// filled in code.
-	cfg := normalizeRabbitConfig(RabbitMQConfig{Queue: "cdc-trigger-events"})
-	assert.Equal(t, "cdc-trigger-events", cfg.RoutingKey)
+func TestNormalizeRabbitConfig_Defaults(t *testing.T) {
+	cfg := normalizeRabbitConfig(RabbitMQConfig{})
+
 	assert.Equal(t, "direct", cfg.ExchangeType)
+	assert.Equal(t, cfg.Queue, cfg.RoutingKey)
+}
 
-	// What the configuration file says wins.
-	cfg = normalizeRabbitConfig(RabbitMQConfig{
-		Queue:        "cdc-trigger-events",
-		RoutingKey:   "cdc.#",
-		ExchangeType: "topic",
+func TestNormalizeRabbitConfig_PreservesValues(t *testing.T) {
+	cfg := normalizeRabbitConfig(RabbitMQConfig{
+		Queue:        "my-queue",
+		RoutingKey:   "my-key",
+		ExchangeType: "fanout",
 	})
-	assert.Equal(t, "cdc.#", cfg.RoutingKey)
-	assert.Equal(t, "topic", cfg.ExchangeType)
+
+	assert.Equal(t, "my-queue", cfg.Queue)
+	assert.Equal(t, "my-key", cfg.RoutingKey)
+	assert.Equal(t, "fanout", cfg.ExchangeType)
 }
 
-// A client without a channel must never be reported as healthy: that is what
-// made a dropped connection look like a sent message.
-func TestRabbitClientErr(t *testing.T) {
-	assert.Error(t, (&rabbitClient{}).err())
+func TestNormalizeRabbitConfig_RoutingKeyDefaultsToQueue(t *testing.T) {
+	cfg := normalizeRabbitConfig(RabbitMQConfig{
+		Queue: "orders",
+	})
 
-	c := newRabbitClient(nil)
-	assert.Error(t, c.err())
-
-	c.stop(errors.New("the channel was closed"))
-	assert.Error(t, c.err())
+	assert.Equal(t, "orders", cfg.RoutingKey)
 }
 
-// A publish waiting for its confirmation has to be released when the channel
-// dies, instead of waiting for its context.
-func TestRabbitClientStopReleasesWaiters(t *testing.T) {
+func TestDeliveryMode_Durable(t *testing.T) {
+	assert.Equal(t, amqp091.Persistent, deliveryMode(true))
+}
+
+func TestDeliveryMode_Transient(t *testing.T) {
+	assert.Equal(t, amqp091.Transient, deliveryMode(false))
+}
+
+func TestRabbitClient_New(t *testing.T) {
 	c := newRabbitClient(nil)
+	assert.NotNil(t, c)
+	assert.NotNil(t, c.done)
+	assert.NotNil(t, c.waiters)
+	assert.NotNil(t, c.returned)
+}
+
+func TestRabbitClient_Err_NoChannel(t *testing.T) {
+	c := newRabbitClient(nil)
+	err := c.err()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no channel")
+}
+
+func TestRabbitClient_Err_ClosedDone(t *testing.T) {
+	c := newRabbitClient(nil)
+	c.stop(errors.New("test error"))
+
+	err := c.err()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "test error")
+}
+
+func TestRabbitClient_Stop_Idempotent(t *testing.T) {
+	c := newRabbitClient(nil)
+	c.stop(errors.New("first error"))
+
+	// Calling stop again should be a no-op (stopOnce).
+	c.stop(errors.New("second error"))
+
+	err := c.err()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "first error")
+}
+
+func TestRabbitClient_Stop_ReleasesWaiters(t *testing.T) {
+	c := newRabbitClient(nil)
+
+	// Register a waiter.
 	waiter := make(chan error, 1)
+	c.mu.Lock()
 	c.waiters[1] = waiter
+	c.mu.Unlock()
 
-	c.stop(errors.New("the channel was closed"))
+	c.stop(errors.New("channel closed"))
 
 	select {
 	case err := <-waiter:
 		assert.Error(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("the waiting publish was never released")
+		assert.Contains(t, err.Error(), "channel closed")
+	default:
+		t.Fatal("waiter was not released by stop()")
 	}
 }
 
-// The broker confirms a message it could not route, so the confirmation alone
-// says nothing about delivery: the return that precedes it must decide.
-func TestRabbitClientReturnBeatsTheConfirmation(t *testing.T) {
+func TestRabbitClient_MarkReturned_NotWaiting(t *testing.T) {
+	c := newRabbitClient(nil)
+	// MessageId "999" has no waiter; should be a no-op.
+	r := amqp091.Return{MessageId: "999"}
+	c.markReturned(r)
+
+	c.mu.Lock()
+	assert.Empty(t, c.returned)
+	c.mu.Unlock()
+}
+
+func TestRabbitClient_MarkReturned_InvalidMessageID(t *testing.T) {
 	c := newRabbitClient(nil)
 	waiter := make(chan error, 1)
-	c.waiters[3] = waiter
+	c.mu.Lock()
+	c.waiters[1] = waiter
+	c.mu.Unlock()
 
-	c.markReturned(amqp091.Return{
-		ReplyCode:  312,
-		ReplyText:  "NO_ROUTE",
-		Exchange:   "cdc-trigger-exchange",
-		RoutingKey: "cdc-trigger-events",
-		MessageId:  "3",
-	})
-	c.settle(amqp091.Confirmation{DeliveryTag: 3, Ack: true})
+	// Non-numeric MessageId should be ignored.
+	r := amqp091.Return{MessageId: "not-a-number"}
+	c.markReturned(r)
+
+	c.mu.Lock()
+	assert.Empty(t, c.returned)
+	c.mu.Unlock()
+}
+
+func TestRabbitClient_MarkReturned_Waiting(t *testing.T) {
+	c := newRabbitClient(nil)
+	waiter := make(chan error, 1)
+	c.mu.Lock()
+	c.waiters[1] = waiter
+	c.mu.Unlock()
+
+	r := amqp091.Return{MessageId: "1"}
+	c.markReturned(r)
+
+	c.mu.Lock()
+	assert.Contains(t, c.returned, uint64(1))
+	c.mu.Unlock()
+}
+
+func TestRabbitClient_Settle_Acked(t *testing.T) {
+	c := newRabbitClient(nil)
+	waiter := make(chan error, 1)
+	c.mu.Lock()
+	c.waiters[1] = waiter
+	c.mu.Unlock()
+
+	c.settle(amqp091.Confirmation{DeliveryTag: 1, Ack: true})
 
 	select {
 	case err := <-waiter:
-		assert.ErrorIs(t, err, errUnroutable)
-	case <-time.After(time.Second):
-		t.Fatal("the publish was not answered")
+		assert.NoError(t, err)
+	default:
+		t.Fatal("waiter was not answered by settle()")
 	}
 }
 
-func TestRabbitClientSettle(t *testing.T) {
-	// An ack with no return is a delivered message.
+func TestRabbitClient_Settle_Nacked(t *testing.T) {
 	c := newRabbitClient(nil)
 	waiter := make(chan error, 1)
+	c.mu.Lock()
 	c.waiters[1] = waiter
+	c.mu.Unlock()
+
+	c.settle(amqp091.Confirmation{DeliveryTag: 1, Ack: false})
+
+	select {
+	case err := <-waiter:
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "rejected")
+	default:
+		t.Fatal("waiter was not answered by settle()")
+	}
+}
+
+func TestRabbitClient_Settle_Returned(t *testing.T) {
+	c := newRabbitClient(nil)
+	waiter := make(chan error, 1)
+	c.mu.Lock()
+	c.waiters[1] = waiter
+	c.returned[1] = errUnroutable
+	c.mu.Unlock()
+
 	c.settle(amqp091.Confirmation{DeliveryTag: 1, Ack: true})
-	assert.NoError(t, <-waiter)
 
-	// A nack is a failure.
-	c = newRabbitClient(nil)
-	waiter = make(chan error, 1)
-	c.waiters[2] = waiter
-	c.settle(amqp091.Confirmation{DeliveryTag: 2, Ack: false})
-	assert.Error(t, <-waiter)
-
-	// A return for a message nobody waits for is not recorded, so a channel
-	// shared with another publisher cannot leak into this one's failures.
-	c = newRabbitClient(nil)
-	c.markReturned(amqp091.Return{MessageId: "1", ReplyCode: 312})
-	assert.Empty(t, c.returned)
-	c.markReturned(amqp091.Return{MessageId: "not-a-number", ReplyCode: 312})
-	assert.Empty(t, c.returned)
+	select {
+	case err := <-waiter:
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, errUnroutable)
+	default:
+		t.Fatal("waiter was not answered by settle()")
+	}
 }
 
-func TestDeliveryMode(t *testing.T) {
-	assert.Equal(t, uint8(2), deliveryMode(true), "a durable queue keeps its messages on disk")
-	assert.Equal(t, uint8(1), deliveryMode(false))
+func TestRabbitClient_Settle_NotWaiting(t *testing.T) {
+	c := newRabbitClient(nil)
+	// No waiter for tag 999.
+	c.settle(amqp091.Confirmation{DeliveryTag: 999, Ack: true})
+	// Should not panic.
 }
 
-func TestRabbitMQOutput_SendAfterClose(t *testing.T) {
-	out := &RabbitMQOutput{config: normalizeRabbitConfig(RabbitMQConfig{Queue: "cdc-trigger-events"})}
-	assert.NoError(t, out.Close())
-	assert.NoError(t, out.Close(), "closing twice is not an error")
+func TestRabbitMQOutput_Close(t *testing.T) {
+	r := &RabbitMQOutput{closed: false}
+	err := r.Close()
+	assert.NoError(t, err)
+	assert.True(t, r.closed)
+}
 
-	err := out.Send(context.Background(), types.EventData{Time: time.Now()})
-	assert.Error(t, err, "a closed output must report the failure instead of reporting success")
+func TestRabbitMQOutput_Close_AlreadyClosed(t *testing.T) {
+	r := &RabbitMQOutput{closed: true}
+	err := r.Close()
+	assert.NoError(t, err)
+}
+
+func TestRabbitMQOutput_Close_WithClient(t *testing.T) {
+	c := newRabbitClient(nil)
+	r := &RabbitMQOutput{client: c}
+	err := r.Close()
+	assert.NoError(t, err)
+	assert.Nil(t, r.client)
+	assert.True(t, r.closed)
+}
+
+func TestRabbitMQOutput_Send_ClosedOutput(t *testing.T) {
+	r := &RabbitMQOutput{closed: true}
+	err := r.Send(context.Background(), types.EventData{})
+	assert.Error(t, err)
+}
+
+func TestRabbitMQOutput_Send_UnroutableNotRetried(t *testing.T) {
+	// Build a client that is stopped with errUnroutable. Send should
+	// marshal, call publish, get errUnroutable back, and return it
+	// without trying to reconnect.
+	c := newRabbitClient(nil)
+	c.stop(errUnroutable)
+
+	r := &RabbitMQOutput{
+		client: c,
+		config: normalizeRabbitConfig(RabbitMQConfig{}),
+	}
+
+	err := r.Send(context.Background(), types.EventData{})
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, errUnroutable)
+}
+
+func TestRabbitMQOutput_Current_Closed(t *testing.T) {
+	r := &RabbitMQOutput{closed: true}
+	_, err := r.current()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "closed")
+}
+
+func TestRabbitMQOutput_Reconnect_Closed(t *testing.T) {
+	r := &RabbitMQOutput{closed: true}
+	_, err := r.reconnect(nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "closed")
 }

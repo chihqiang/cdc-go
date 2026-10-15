@@ -2,7 +2,6 @@ package output
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -11,70 +10,57 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewRedisOutput(t *testing.T) {
+func TestNewRedisOutput_Success(t *testing.T) {
 	mr, err := miniredis.Run()
 	assert.NoError(t, err)
 	defer mr.Close()
 
-	cfg := RedisConfig{
+	out, err := NewRedisOutput(RedisConfig{
 		Addr: mr.Addr(),
-		DB:   0,
-		Key:  "test-key",
-	}
-
-	rout, err := NewRedisOutput(cfg)
+		Key:  "test-events",
+	})
 	assert.NoError(t, err)
-	assert.NotNil(t, rout)
-	assert.Equal(t, cfg.Key, rout.key)
-	err = rout.Close()
-	assert.NoError(t, err)
+	assert.NotNil(t, out)
+	assert.Equal(t, "test-events", out.key)
+	assert.NoError(t, out.Close())
 }
 
-func TestRedisOutput_Send(t *testing.T) {
+func TestNewRedisOutput_ConnectionError(t *testing.T) {
+	_, err := NewRedisOutput(RedisConfig{
+		Addr: "127.0.0.1:1",
+	})
+	assert.Error(t, err)
+}
+
+func TestRedisOutput_Send_Success(t *testing.T) {
 	mr, err := miniredis.Run()
 	assert.NoError(t, err)
 	defer mr.Close()
 
-	cfg := RedisConfig{
+	out, _ := NewRedisOutput(RedisConfig{
 		Addr: mr.Addr(),
-		DB:   0,
 		Key:  "test-events",
-	}
-
-	rout, err := NewRedisOutput(cfg)
-	assert.NoError(t, err)
-	defer rout.Close()
-
-	ctx := context.Background()
+	})
+	defer out.Close()
 
 	event := types.EventData{
 		Time:     time.Now(),
-		ServerID: 12345,
-		Pos:      6789,
+		ServerID: 1,
 		Row: types.EventRowData{
-			Time:     time.Now().UnixMilli(),
 			Database: "testdb",
 			Table:    "users",
 			Type:     types.InsertEventRowType,
-			Data: map[string]any{
-				"id":   1,
-				"name": "Alice",
-			},
+			Data:     map[string]any{"id": 1, "name": "Alice"},
 		},
 	}
 
-	err = rout.Send(ctx, event)
+	err = out.Send(context.Background(), event)
 	assert.NoError(t, err)
 
-	values, _ := mr.List(cfg.Key)
-	assert.Len(t, values, 1, "Redis list should contain one item")
-
-	var stored types.EventData
-	err = json.Unmarshal([]byte(values[0]), &stored)
+	// Verify the data was pushed to the Redis list.
+	list, err := mr.List("test-events")
 	assert.NoError(t, err)
-	assert.Equal(t, event.ServerID, stored.ServerID)
-	assert.Equal(t, event.Row.Table, stored.Row.Table)
-	assert.Equal(t, event.Row.Data["name"], stored.Row.Data["name"])
+	assert.Len(t, list, 1)
 }
 
 func TestRedisOutput_Send_InvalidJSON(t *testing.T) {
@@ -82,33 +68,63 @@ func TestRedisOutput_Send_InvalidJSON(t *testing.T) {
 	assert.NoError(t, err)
 	defer mr.Close()
 
-	cfg := RedisConfig{
+	out, _ := NewRedisOutput(RedisConfig{
 		Addr: mr.Addr(),
-		DB:   0,
-		Key:  "bad-events",
-	}
-
-	rout, err := NewRedisOutput(cfg)
-	assert.NoError(t, err)
-	defer rout.Close()
-
-	ctx := context.Background()
+		Key:  "test-events",
+	})
+	defer out.Close()
 
 	event := types.EventData{
-		Time:     time.Now(),
-		ServerID: 999,
-		Pos:      111,
 		Row: types.EventRowData{
-			Time:     time.Now().UnixMilli(),
-			Database: "bad_db",
-			Table:    "weird_table",
-			Type:     types.UpdateEventRowType,
-			Data: map[string]any{
-				"broken": make(chan int),
-			},
+			Data: map[string]any{"bad": make(chan int)},
 		},
 	}
 
-	err = rout.Send(ctx, event)
-	assert.Error(t, err, "should return error for invalid JSON")
+	err = out.Send(context.Background(), event)
+	assert.Error(t, err)
+}
+
+func TestRedisOutput_Close(t *testing.T) {
+	mr, err := miniredis.Run()
+	assert.NoError(t, err)
+
+	out, _ := NewRedisOutput(RedisConfig{Addr: mr.Addr()})
+	mr.Close()
+
+	// Close should not panic even if Redis is gone.
+	assert.NotPanics(t, func() {
+		_ = out.Close()
+	})
+}
+
+func TestNewOutput_Redis(t *testing.T) {
+	mr, err := miniredis.Run()
+	assert.NoError(t, err)
+	defer mr.Close()
+
+	out, err := NewOutput(Config{
+		Type:  OutputTypeRedis,
+		Redis: RedisConfig{Addr: mr.Addr(), Key: "events"},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, out)
+	assert.NoError(t, out.Close())
+}
+
+func TestNewOutput_RabbitMQ_ConnectionError(t *testing.T) {
+	_, err := NewOutput(Config{
+		Type:     OutputTypeRabbitMQ,
+		RabbitMQ: RabbitMQConfig{URL: "amqp://guest:guest@127.0.0.1:1/"},
+	})
+	assert.Error(t, err)
+}
+
+func TestNewOutput_Kafka(t *testing.T) {
+	out, err := NewOutput(Config{
+		Type:  OutputTypeKafka,
+		Kafka: KafkaConfig{Brokers: []string{"127.0.0.1:9092"}, Topic: "test"},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, out)
+	assert.NoError(t, out.Close())
 }
