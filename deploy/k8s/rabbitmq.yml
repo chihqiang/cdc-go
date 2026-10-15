@@ -1,0 +1,120 @@
+# kubectl apply -f deploy/k8s/rabbitmq.yml
+#
+# cdc-trigger declares the exchange and the queue itself on startup, so no init
+# job is needed here.
+# In cluster addresses: rabbitmq.kube-middleware:5672 (AMQP),
+#                       rabbitmq.kube-middleware:15672 (management UI)
+#
+# StatefulSet is mandatory here, not a style choice: the mnesia directory under
+# /var/lib/rabbitmq is bound to the Erlang node name, which is derived from the
+# pod hostname. A Deployment would rename the pod on every rollout, and the new
+# pod would find data owned by a node name it can never use again.
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: rabbitmq-broker
+  # Governing service of the StatefulSet: gives the pod the stable DNS name
+  # rabbitmq-0.rabbitmq-headless.kube-middleware.svc.cluster.local.
+  name: rabbitmq-headless
+  namespace: kube-middleware
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+    - name: management
+      port: 15672
+      targetPort: management
+  selector:
+    app: rabbitmq-broker
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: rabbitmq-broker
+  name: rabbitmq
+  namespace: kube-middleware
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq-broker
+  serviceName: rabbitmq-headless
+  template:
+    metadata:
+      labels:
+        app: rabbitmq-broker
+    spec:
+      # The official image runs as the rabbitmq user (uid 999).
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3-management
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: guest
+            - name: RABBITMQ_DEFAULT_PASS
+              value: guest
+          ports:
+            - containerPort: 5672
+              name: amqp
+            - containerPort: 15672
+              name: management
+          volumeMounts:
+            - mountPath: /var/lib/rabbitmq
+              name: data
+          readinessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - -q
+                - check_running
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          livenessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - -q
+                - ping
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: rabbitmq-broker
+  name: rabbitmq
+  namespace: kube-middleware
+spec:
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+    - name: management
+      port: 15672
+      targetPort: management
+  selector:
+    app: rabbitmq-broker

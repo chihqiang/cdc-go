@@ -1,0 +1,118 @@
+# kubectl apply -f deploy/k8s/pulsar.yml
+#
+# Standalone Pulsar (broker + BookKeeper + ZooKeeper in one process), the same
+# layout as deploy/compose/pulsar.yml.
+# In cluster addresses: pulsar.kube-middleware:6650 (binary protocol),
+#                       pulsar.kube-middleware:8080 (admin/web service)
+#
+# StatefulSet because the BookKeeper ledgers and the embedded ZooKeeper
+# snapshots live on the volume of one specific instance.
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: pulsar-broker
+  # Governing service of the StatefulSet: gives the pod the stable DNS name
+  # pulsar-0.pulsar-headless.kube-middleware.svc.cluster.local.
+  name: pulsar-headless
+  namespace: kube-middleware
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: pulsar
+      port: 6650
+      targetPort: pulsar
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: pulsar-broker
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: pulsar-broker
+  name: pulsar
+  namespace: kube-middleware
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pulsar-broker
+  serviceName: pulsar-headless
+  template:
+    metadata:
+      labels:
+        app: pulsar-broker
+    spec:
+      # The image runs as the pulsar user (uid 10000) and needs to write the
+      # ledgers below /pulsar/data.
+      securityContext:
+        fsGroup: 10000
+      containers:
+        - name: pulsar
+          image: apachepulsar/pulsar:4.1.1
+          command:
+            - bin/pulsar
+            - standalone
+          env:
+            # Broker, BookKeeper and ZooKeeper share this heap: keep the limit
+            # well above the -Xmx below.
+            - name: PULSAR_MEM
+              value: -Xms512m -Xmx512m
+          ports:
+            - containerPort: 6650
+              name: pulsar
+            - containerPort: 8080
+              name: http
+          volumeMounts:
+            - mountPath: /pulsar/data
+              name: data
+          readinessProbe:
+            httpGet:
+              path: /admin/v2/brokers/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /admin/v2/brokers/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: pulsar-broker
+  name: pulsar
+  namespace: kube-middleware
+spec:
+  ports:
+    - name: pulsar
+      port: 6650
+      targetPort: pulsar
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: pulsar-broker

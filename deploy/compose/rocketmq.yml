@@ -1,5 +1,5 @@
-# docker-compose -f tests/rocketmq.yml up -d
-# docker-compose -f tests/rocketmq.yml down
+# docker-compose -f deploy/compose/rocketmq.yml up -d
+# docker-compose -f deploy/compose/rocketmq.yml down
 services:
   mysql:
     image: mysql:8.0
@@ -61,16 +61,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
-  rocketmq-init:
-    image: apache/rocketmq:4.9.7
-    container_name: cdc-trigger-rocketmq-init
-    networks:
-      - cdc-trigger-network
-    depends_on:
-      rocketmq-broker:
-        condition: service_healthy
-    command: sh -c "sh mqadmin updateTopic -n rocketmq-nameserver:9876 -c DefaultCluster -t cdc-trigger-events"
-    restart: "no"
 networks:
   cdc-trigger-network:
     driver: bridge

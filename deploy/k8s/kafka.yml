@@ -1,0 +1,148 @@
+# kubectl apply -f deploy/k8s/kafka.yml
+#
+# Single node KRaft broker, the same layout as deploy/compose/kafka.yml: this
+# broker is also the controller, so no ZooKeeper is needed.
+# In cluster address: kafka.kube-middleware:9092
+#
+# StatefulSet because the log directory is bound to the broker identity
+# (meta.properties holds the node id and the cluster id) and to the volume.
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kafka-broker
+  # Governing service of the StatefulSet: gives the pod the stable DNS name
+  # kafka-0.kafka-headless.kube-middleware.svc.cluster.local.
+  name: kafka-headless
+  namespace: kube-middleware
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: plaintext
+      port: 9092
+      targetPort: plaintext
+    - name: controller
+      port: 9093
+      targetPort: controller
+  selector:
+    app: kafka-broker
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: kafka-broker
+  name: kafka
+  namespace: kube-middleware
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-broker
+  serviceName: kafka-headless
+  template:
+    metadata:
+      labels:
+        app: kafka-broker
+    spec:
+      # The apache/kafka image runs as uid 1000 (appuser).
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: kafka
+          image: apache/kafka:4.3.1
+          env:
+            - name: CLUSTER_ID
+              # Fixed cluster id: with persistent storage the log directory is
+              # formatted once, a random id on every start would fail to match it.
+              value: -tYpPzxDRSCUl224wCPXJQ
+            - name: KAFKA_NODE_ID
+              value: '1'
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: 1@kafka:9093
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: PLAINTEXT
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+            # Only the in cluster address is advertised: cdc-trigger runs in the
+            # same cluster, no external listener is published. Reach the broker
+            # from a laptop with `kubectl port-forward svc/kafka 9092:9092` and
+            # add an EXTERNAL listener if the advertised address has to change.
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://kafka:9092
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+            # One broker, so every internal topic can only be replicated once.
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: '1'
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: '1'
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: '1'
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: '0'
+          ports:
+            - containerPort: 9092
+              name: plaintext
+            - containerPort: 9093
+              name: controller
+          volumeMounts:
+            - mountPath: /var/lib/kafka/data
+              name: data
+          startupProbe:
+            tcpSocket:
+              port: controller
+            failureThreshold: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - /opt/kafka/bin/kafka-broker-api-versions.sh
+                - --bootstrap-server
+                - kafka:9092
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: plaintext
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kafka-broker
+  name: kafka
+  namespace: kube-middleware
+spec:
+  ports:
+    - name: plaintext
+      port: 9092
+      targetPort: plaintext
+    - name: controller
+      port: 9093
+      targetPort: controller
+  selector:
+    app: kafka-broker
