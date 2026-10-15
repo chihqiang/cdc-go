@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"os"
+	"os/signal"
 	"runtime"
+	"syscall"
 
 	"github.com/chihqiang/cdc-trigger/cmd"
 	"github.com/chihqiang/cli"
@@ -14,9 +16,6 @@ var (
 	version = "main"
 )
 
-func init() {
-}
-
 func main() {
 	app := &cli.Command{}
 	app.Name = "cdc-trigger"
@@ -26,16 +25,21 @@ func main() {
 		out.Infof("%s %s — built with %s on %s/%s",
 			in.Command().Name, in.Command().Version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	}
+	listenCmd := cmd.ListenCommand()
 	app.Flags = cmd.Flags()
 	app.Before = cmd.Before
 	app.Subcommands = []*cli.Command{
-		cmd.ListenCommand(),
+		listenCmd,
 	}
-	app.Action = func(ctx context.Context, in *cli.Input, out *cli.Output) error {
-		listenCmd := cmd.ListenCommand()
-		return listenCmd.Action(ctx, in, out)
-	}
-	if err := app.Run(context.Background(), os.Args); err != nil {
+	app.Action = listenCmd.Action
+	// Trap SIGTERM (Kubernetes pod shutdown) and SIGINT (Ctrl-C) so that the
+	// listen command receives a cancelled context instead of being killed
+	// mid-flight. Without this, canal.Close() never runs, and the last
+	// binlog position is not saved — the next restart re-emits events.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := app.Run(ctx, os.Args); err != nil {
 		logx.Error("%v", err)
 		os.Exit(1)
 	}

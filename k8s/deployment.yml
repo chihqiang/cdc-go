@@ -37,3 +37,4 @@ spec:
               memory: 500Mi
       dnsPolicy: ClusterFirst
       restartPolicy: Always
+      terminationGracePeriodSeconds: 30

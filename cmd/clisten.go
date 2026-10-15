@@ -3,11 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"runtime"
+	"sync"
 
 	"github.com/chihqiang/cdc-trigger/config"
 	"github.com/chihqiang/cdc-trigger/output"
-	"github.com/chihqiang/cdc-trigger/source"
 	"github.com/chihqiang/cli"
 	"github.com/chihqiang/logx"
 )
@@ -33,66 +32,61 @@ func Listen(ctx context.Context, config *config.Config) error {
 	if err != nil {
 		return err
 	}
-	defer CloseSetupComponents(iSource, iStore, iOutput)
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	sourceErrChan := startSource(ctx, iSource)
-	workerCount := runtime.NumCPU()
-	startWorkers(ctx, iSource, iOutput, workerCount)
-	if err := waitSourceError(sourceErrChan); err != nil {
-		return err
-	}
-	logx.Info("CDC process completed successfully")
-	return nil
-}
 
-// Start Source and return the error channel
-func startSource(ctx context.Context, iSource source.ISource) <-chan error {
-	errChan := make(chan error, 1)
+	// The source is what ends the process: it reports why it stopped, or it
+	// returns once the context is canceled.
+	sourceErrChan := make(chan error, 1)
 	go func() {
 		logx.Info("starting source goroutine")
 		if err := iSource.Run(ctx); err != nil {
 			logx.Error("source run failed: %v", err)
-			errChan <- err
+			sourceErrChan <- err
 		}
-		close(errChan)
+		close(sourceErrChan)
 	}()
-	return errChan
-}
 
-// Start the worker pool
-func startWorkers(ctx context.Context, iSource source.ISource, iOutput output.IOutput, workerCount int) {
-	for i := 0; i < workerCount; i++ {
-		go workerLoop(ctx, i, iSource, iOutput)
-	}
-	logx.Info("started all workers, count: %d", workerCount)
-}
-
-// Worker main loop
-func workerLoop(ctx context.Context, id int, iSource source.ISource, iOutput output.IOutput) {
-	logx.Info("worker started, workerID: %d", id)
-	for {
-		select {
-		case event, ok := <-iSource.GetChanEventData():
-			if !ok {
-				logx.Info("event channel closed, workerID: %d", id)
+	// One consumer, so the events reach the output in the order the source
+	// produced them: a pool of them lets a later row overtake an earlier one
+	// on the way out.
+	var consumerWg sync.WaitGroup
+	consumerWg.Add(1)
+	go func() {
+		defer consumerWg.Done()
+		for {
+			select {
+			case event, ok := <-iSource.GetChanEventData():
+				if !ok {
+					logx.Info("event channel closed, consumer exiting")
+					return
+				}
+				if err := output.SendWithRetry(ctx, iOutput, event, 3); err != nil {
+					logx.Error("failed to send event after retries, error: %v, db: %s, table: %s, type: %s, pos: %d",
+						err, event.Row.Database, event.Row.Table, event.Row.Type, event.Pos)
+				}
+			case <-ctx.Done():
+				logx.Info("context canceled, consumer exiting")
 				return
 			}
-			logx.Info("CDC Event: %+v", event)
-			if err := output.SendWithRetry(ctx, iOutput, event, 3); err != nil {
-				logx.Error("failed to send event, workerID: %d, error: %v", id, err)
-			}
-		case <-ctx.Done():
-			logx.Info("context canceled, worker exiting, workerID: %d", id)
-			return
 		}
-	}
-}
+	}()
 
-// Waiting for data source error signal
-func waitSourceError(errChan <-chan error) error {
-	if err, ok := <-errChan; ok && err != nil {
+	if err := <-sourceErrChan; err != nil {
+		// Cancel the context to signal the consumer to stop, then wait for it
+		// to finish before closing the components.
+		cancel()
+		consumerWg.Wait()
+		CloseSetupComponents(iSource, iStore, iOutput)
 		return err
 	}
+	logx.Info("CDC process completed successfully")
+
+	// The source has stopped and closed its event channel, so the consumer
+	// will see the close and exit. Wait for it before closing the output to
+	// avoid a race where a Send is in flight while Close is called.
+	consumerWg.Wait()
+	CloseSetupComponents(iSource, iStore, iOutput)
 	return nil
 }

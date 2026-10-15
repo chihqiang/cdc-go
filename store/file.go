@@ -50,12 +50,39 @@ func (fs *FileStore) Has(key string) bool {
 	return err == nil
 }
 
-// Set Writes the value corresponding to the key into a file (atomic write)
+// Set Writes the value corresponding to the key into a file atomically.
+// The data is first written to a temporary file and then renamed to the
+// target file, so a crash during writing does not leave a partially
+// written file that would corrupt the stored position on the next load.
 func (fs *FileStore) Set(key string, value []byte) error {
 	lock := fs.getLock(key)
 	lock.Lock()
 	defer lock.Unlock()
-	return os.WriteFile(fs.filePath(key), value, 0644)
+
+	path := fs.filePath(key)
+	tmp, err := os.CreateTemp(fs.dir, keyPrefix+"*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	// Clean up the temp file if anything fails before the rename.
+	defer func() {
+		if _, err := os.Stat(tmpName); err == nil {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if _, err := tmp.Write(value); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // Get Reads the value corresponding to the key from the file

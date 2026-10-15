@@ -60,6 +60,12 @@ type MySQLSource struct {
 	eventDataChan chan types.EventData
 	// running Indicates whether the datasource is running
 	running bool
+	// chanClosed Indicates whether the event channel has been closed,
+	// used to prevent send on closed channel panic
+	chanClosed bool
+	// runCtx is the context under which Run was called, used to unblock
+	// OnRow when the source is being shut down.
+	runCtx context.Context
 }
 
 // MysqlPosition MySQL binlog position structure
@@ -95,6 +101,7 @@ func NewMySQLSource(cfg MysqlConfig) (ISource, error) {
 	source := &MySQLSource{
 		cfg:           cfg,
 		eventDataChan: make(chan types.EventData, 10240), // Event channel with buffer size 10240
+		runCtx:        context.Background(),
 	}
 	// Create canal instance
 	c, err := canal.NewCanal(cc)
@@ -129,7 +136,9 @@ func (s *MySQLSource) Run(ctx context.Context) error {
 		return fmt.Errorf("it is already running")
 	}
 	s.running = true
+	s.runCtx = ctx
 	s.mu.Unlock()
+
 	// Load last saved sync position
 	startPos := s.loadPosition()
 	// Create a channel to receive canal exit notifications
@@ -145,15 +154,18 @@ func (s *MySQLSource) Run(ctx context.Context) error {
 	// Wait for context cancellation or canal error
 	select {
 	case <-ctx.Done():
-		// Context cancelled, stop canal
-		s.canal.Close()
+		// Context cancelled, stop canal and close the event channel so
+		// consumers know there will be no more events.
+		s.stop()
 		return ctx.Err()
 	case err := <-done:
-		// Canal error, update running state
-		s.mu.Lock()
-		s.running = false
-		s.mu.Unlock()
-		return fmt.Errorf("canal operation error: %w", err)
+		// Canal returned (either error or nil). Close the event channel
+		// so consumers can exit their receive loops.
+		s.stop()
+		if err != nil {
+			return fmt.Errorf("canal operation error: %w", err)
+		}
+		return nil
 	}
 }
 
@@ -163,25 +175,30 @@ func (s *MySQLSource) GetChanEventData() <-chan types.EventData {
 	return s.eventDataChan
 }
 
-// Close Closes the datasource and releases resources
-// Returns: Possible errors
-func (s *MySQLSource) Close() error {
+// stop closes the canal and the event channel exactly once. It is safe to
+// call from both Run and Close because the running flag and chanClosed flag
+// are both checked under the lock.
+func (s *MySQLSource) stop() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// If already stopped, return directly
 	if !s.running {
-		return nil
+		s.mu.Unlock()
+		return
 	}
-
-	// Close canal instance
+	s.running = false
 	if s.canal != nil {
 		s.canal.Close()
 	}
+	if !s.chanClosed {
+		close(s.eventDataChan)
+		s.chanClosed = true
+	}
+	s.mu.Unlock()
+}
 
-	// Close event channel
-	close(s.eventDataChan)
-	s.running = false
+// Close Closes the datasource and releases resources
+// Returns: Possible errors
+func (s *MySQLSource) Close() error {
+	s.stop()
 	return nil
 }
 
@@ -225,10 +242,13 @@ func (s *MySQLSource) OnRow(rowsEvent *canal.RowsEvent) error {
 			event.Row.Type = types.EventRowType(rowsEvent.Action)
 			event.Row.Data = s.rowToMap(row, rowsEvent.Table)
 		}
+		// Block until the event is sent or the context is cancelled. This
+		// applies natural backpressure instead of discarding events: a slow
+		// consumer slows down the binlog reader rather than losing data.
 		select {
 		case s.eventDataChan <- event:
-		default:
-			logx.Warn("Event channel is full, discarding event, db: %s, table: %s", event.Row.Database, event.Row.Table)
+		case <-s.runCtx.Done():
+			return s.runCtx.Err()
 		}
 	}
 	return nil
@@ -252,7 +272,12 @@ func (s *MySQLSource) OnPosSynced(header *replication.EventHeader, pos mysql.Pos
 func (s *MySQLSource) rowToMap(row []interface{}, table *schema.Table) map[string]interface{} {
 	m := make(map[string]interface{})
 
+	// Guard against row/column length mismatch to prevent index-out-of-range panic
 	for j, col := range table.Columns {
+		if j >= len(row) {
+			m[col.Name] = nil
+			continue
+		}
 		raw := row[j]
 		if raw == nil {
 			m[col.Name] = nil
@@ -340,16 +365,21 @@ func (s *MySQLSource) loadPosition() mysql.Position {
 	positionBytes, err := s.store.Get(StoreKeyPosition)
 	if err == nil && len(positionBytes) > 0 {
 		var storePos MysqlPosition
-		_ = json.Unmarshal(positionBytes, &storePos)
-		if storePos.File != "" && storePos.Pos != 0 {
+		if err := json.Unmarshal(positionBytes, &storePos); err != nil {
+			logx.Warn("failed to unmarshal saved position, falling back to master position: %v", err)
+		} else if storePos.File != "" && storePos.Pos != 0 {
 			// Set position information
 			return mysql.Position{Name: storePos.File, Pos: storePos.Pos}
 		}
+	} else if err != nil {
+		logx.Warn("failed to load saved position from store, falling back to master position: %v", err)
 	}
 	// If loading fails, try to get the position from the master
-	pos, err := s.canal.GetMasterPos()
-	if err == nil {
-		return pos
+	if s.canal != nil {
+		pos, err := s.canal.GetMasterPos()
+		if err == nil {
+			return pos
+		}
 	}
 	// If all fails, return default position
 	return mysql.Position{}
@@ -359,8 +389,6 @@ func (s *MySQLSource) loadPosition() mysql.Position {
 // pos: Sync position to save
 // Returns: Possible errors
 func (s *MySQLSource) savePosition(pos mysql.Position) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	// Convert position format
 	positionBytes, err := json.Marshal(MysqlPosition{
 		File: pos.Name,
@@ -369,5 +397,8 @@ func (s *MySQLSource) savePosition(pos mysql.Position) error {
 	if err != nil {
 		return fmt.Errorf("marshal position error: %w", err)
 	}
+	// store.Set is responsible for its own thread safety, so no lock is
+	// needed here. Holding s.mu across store.Set would deadlock with stop(),
+	// which waits for s.mu while canal.Close() may still be calling OnPosSynced.
 	return s.store.Set(StoreKeyPosition, positionBytes)
 }

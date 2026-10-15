@@ -1,0 +1,70 @@
+# docker-compose -f tests/kafka.yml up -d
+# docker-compose -f tests/kafka.yml down
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: cdc-trigger-mysql
+    restart: always
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: cdctrigger
+      TZ: Asia/Shanghai
+    volumes:
+      - ./:/cdc-trigger
+    networks:
+      - cdc-trigger-network
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p123456" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: apache/kafka:4.3.1
+    container_name: cdc-trigger-kafka
+    restart: always
+    ports:
+      - "9092:9092"
+    environment:
+      TZ: Asia/Shanghai
+      # Single node KRaft: this broker is also the controller
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # EXTERNAL is what cdc-trigger on the host connects to, PLAINTEXT is for
+      # the containers on the compose network (kafka-init below)
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:19092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092,EXTERNAL://127.0.0.1:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      # One broker, so every internal topic has to be replicated once
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    networks:
+      - cdc-trigger-network
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:19092 >/dev/null 2>&1 || exit 1" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    container_name: cdc-trigger-kafka-init
+    networks:
+      - cdc-trigger-network
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic cdc-trigger-events --partitions 1 --replication-factor 1
+    restart: "no"
+
+networks:
+  cdc-trigger-network:
+    driver: bridge

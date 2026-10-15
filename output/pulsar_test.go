@@ -82,11 +82,14 @@ func TestPulsarOutput_Send(t *testing.T) {
 
 	pout := &PulsarOutput{
 		cfg: PulsarConfig{
-			URL:   "pulsar://localhost:6650",
+			URL:   "pulsar://127.0.0.1:6650",
 			Topic: "test-topic",
 		},
 		client:   mc,
 		producer: mp,
+	}
+	pout.dialFn = func() (pulsar.Client, pulsar.Producer, error) {
+		return mc, mp, nil
 	}
 
 	event := types.EventData{
@@ -124,6 +127,10 @@ func TestPulsarOutput_SendError(t *testing.T) {
 		client:   mc,
 		producer: mp,
 	}
+	// Override dial to return the mock instead of trying a real connection.
+	pout.dialFn = func() (pulsar.Client, pulsar.Producer, error) {
+		return mc, mp, nil
+	}
 
 	event := types.EventData{Time: time.Now()}
 
@@ -139,6 +146,9 @@ func TestPulsarOutput_Send_InvalidJSON(t *testing.T) {
 		cfg:      PulsarConfig{},
 		client:   mc,
 		producer: mp,
+	}
+	pout.dialFn = func() (pulsar.Client, pulsar.Producer, error) {
+		return mc, mp, nil
 	}
 
 	event := types.EventData{
@@ -163,6 +173,9 @@ func TestPulsarOutput_Close(t *testing.T) {
 		cfg:      PulsarConfig{},
 		client:   mc,
 		producer: mp,
+	}
+	pout.dialFn = func() (pulsar.Client, pulsar.Producer, error) {
+		return mc, mp, nil
 	}
 
 	assert.NotPanics(t, func() {
