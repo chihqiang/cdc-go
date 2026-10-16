@@ -32,6 +32,24 @@ func TestNewRedisOutput_ConnectionError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestNewRedisOutput_WithPassword(t *testing.T) {
+	mr, err := miniredis.Run()
+	assert.NoError(t, err)
+	defer mr.Close()
+
+	mr.RequireAuth("secret")
+
+	// The password has to reach the client: without it the ping the constructor
+	// sends would be refused and this would fail.
+	out, err := NewRedisOutput(RedisConfig{
+		Addr:     mr.Addr(),
+		Password: "secret",
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, out)
+	assert.NoError(t, out.Close())
+}
+
 func TestRedisOutput_Send_Success(t *testing.T) {
 	mr, err := miniredis.Run()
 	assert.NoError(t, err)

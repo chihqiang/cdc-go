@@ -16,11 +16,11 @@ import (
 // ---- mock output for SendWithRetry tests ----
 
 type mockOutput struct {
-	mu       atomic.Int32
-	failN    int32 // number of times to fail before succeeding
-	sendErr  error // error to return when failing
-	closed   bool
-	sent     []types.EventData
+	mu      atomic.Int32
+	failN   int32 // number of times to fail before succeeding
+	sendErr error // error to return when failing
+	closed  bool
+	sent    []types.EventData
 }
 
 func (m *mockOutput) Send(ctx context.Context, event types.EventData) error {

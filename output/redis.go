@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/chihqiang/cdc-trigger/pkg/redisx"
 	"github.com/chihqiang/cdc-trigger/types"
 	"github.com/redis/go-redis/v9"
 )
@@ -27,13 +26,16 @@ type RedisOutput struct {
 // NewRedisOutput Creates a RedisOutput from the given configuration
 func NewRedisOutput(cfg RedisConfig) (*RedisOutput, error) {
 	// Initialize the Redis client
-	rdb, err := redisx.Open(redisx.Config{
+	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Addr,
 		Password: cfg.Password,
 		DB:       cfg.DB,
 	})
-	if err != nil {
-		return nil, err
+	// The client connects lazily, so an address or a password that is wrong
+	// would only be noticed at the first event: the ping reports it here
+	// instead.
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		return nil, fmt.Errorf("failed to connect Redis: %w", err)
 	}
 	return &RedisOutput{
 		cfg: cfg,

@@ -1,0 +1,101 @@
+# ==========================================
+# cdc-trigger Task Configuration File Example (YAML)
+# ==========================================
+#
+# This file configures the consumer side of cdc-trigger: it reads the events
+# a source published to a middleware and routes them to the tasks declared here.
+#
+# Environment variables are referenced from inside the file with ${VAR} or
+# ${VAR:-fallback}, the same as config.yml.
+
+# ---------- Consumer Configuration ----------
+# The middleware the events are read from. It is the counterpart of the output
+# configuration: one section per middleware, of which the one named by type is used.
+consumer:
+  type: "${CONSUMER_TYPE:-redis}"    # Consumer type: redis / kafka / rabbitmq / rocketmq / pulsar
+
+  # Redis settings (reads the list the Redis output writes to)
+  redis:
+    addr: "${CONSUMER_REDIS_ADDR:-127.0.0.1:6379}"
+    password: "${CONSUMER_REDIS_PASSWORD:-}"
+    db: "${CONSUMER_REDIS_DB:-0}"
+    key: "${CONSUMER_REDIS_KEY:-cdc-trigger-events}"
+    timeout: 5                       # BRPOP timeout in seconds (0 = block forever)
+
+  # Kafka settings
+  kafka:
+    brokers:
+      - "${CONSUMER_KAFKA_BROKERS:-127.0.0.1:9092}"
+    topic: "${CONSUMER_KAFKA_TOPIC:-cdc-trigger-events}"
+    group: "${CONSUMER_KAFKA_GROUP:-cdc-trigger-consumer-group}"
+    start_offset: "${CONSUMER_KAFKA_START_OFFSET:-first}"  # first / last
+
+  # RabbitMQ settings
+  rabbitmq:
+    url: "${CONSUMER_RABBITMQ_URL:-amqp://guest:guest@127.0.0.1:5672/}"
+    exchange: "${CONSUMER_RABBITMQ_EXCHANGE:-cdc-trigger-exchange}"
+    exchange_type: "${CONSUMER_RABBITMQ_EXCHANGE_TYPE:-direct}"
+    routing_key: "${CONSUMER_RABBITMQ_ROUTING_KEY:-cdc-trigger-events}"
+    queue: "${CONSUMER_RABBITMQ_QUEUE:-cdc-trigger-events}"
+    durable: true
+    auto_delete: false
+    exclusive: false
+    no_wait: false
+    prefetch: 1
+    drop_on_error: false
+    consumer_tag: ""
+
+  # RocketMQ settings
+  rocketmq:
+    servers:
+      - "${CONSUMER_ROCKETMQ_SERVERS:-127.0.0.1:9876}"
+    topic: "${CONSUMER_ROCKETMQ_TOPIC:-cdc-trigger-events}"
+    group: "${CONSUMER_ROCKETMQ_GROUP:-cdc-trigger-consumer-group}"
+    namespace: "${CONSUMER_ROCKETMQ_NAMESPACE:-}"
+    access_key: "${CONSUMER_ROCKETMQ_ACCESS_KEY:-}"
+    secret_key: "${CONSUMER_ROCKETMQ_SECRET_KEY:-}"
+    consume_from_where: "${CONSUMER_ROCKETMQ_CONSUME_FROM_WHERE:-first_offset}"  # first_offset / last_offset
+    consume_goroutine_nums: 1
+
+  # Pulsar settings
+  pulsar:
+    url: "${CONSUMER_PULSAR_URL:-pulsar://127.0.0.1:6650}"
+    topic: "${CONSUMER_PULSAR_TOPIC:-cdc-trigger-events}"
+    subscription: "${CONSUMER_PULSAR_SUBSCRIPTION:-cdc-trigger-subscription}"
+    subscription_type: "${CONSUMER_PULSAR_SUBSCRIPTION_TYPE:-shared}"      # exclusive / shared / failover / key_shared
+    subscription_initial_position: "${CONSUMER_PULSAR_SUBSCRIPTION_INITIAL_POSITION:-earliest}"  # earliest / latest
+    token: "${CONSUMER_PULSAR_TOKEN:-}"
+    operation_timeout: 30
+    connection_timeout: 30
+    nack_redelivery_delay: 0
+
+# ---------- Task Definitions ----------
+# A list of LogTask definitions. Each task watches a main table and optionally
+# a set of sub tables whose changes also affect a row of the main table.
+#
+# A change in the main table is routed by its primary key, and a change in a
+# sub table is routed by the ref_column that points at the main table's row.
+tasks:
+  - main:
+      database: app
+      name: user
+      primary_key: id
+    sub:
+      - database: app
+        name: user_log
+        primary_key: id
+        ref_column: user_id
+      - database: app
+        name: user_token
+        primary_key: id
+        ref_column: user_id
+
+  - main:
+      database: app
+      name: order
+      primary_key: id
+    sub:
+      - database: app
+        name: order_item
+        primary_key: id
+        ref_column: order_id
