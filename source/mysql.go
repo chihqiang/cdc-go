@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/pkg/cmdx"
 	"github.com/chihqiang/cdc-trigger/store"
 	"github.com/chihqiang/cdc-trigger/types"
 	"github.com/chihqiang/logx"
@@ -90,7 +90,7 @@ func NewMySQLSource(cfg MysqlConfig) (ISource, error) {
 	cc.Addr = cfg.Addr
 	cc.User = cfg.User
 	cc.Password = cfg.Password
-	if !cmdx.CommandExists("mysqldump") {
+	if !commandExists("mysqldump") {
 		cc.Dump.ExecutionPath = ""
 	}
 	cc.ExcludeTableRegex = cfg.ExcludeTableRegex
@@ -401,4 +401,13 @@ func (s *MySQLSource) savePosition(pos mysql.Position) error {
 	// needed here. Holding s.mu across store.Set would deadlock with stop(),
 	// which waits for s.mu while canal.Close() may still be calling OnPosSynced.
 	return s.store.Set(StoreKeyPosition, positionBytes)
+}
+
+// commandExists reports whether cmd can be found on the PATH. It tells
+// NewMySQLSource whether mysqldump is available: canal dumps the table schema
+// with it before it reads the binlog, and an execution path pointing at a
+// mysqldump that is not there makes that dump fail.
+func commandExists(cmd string) bool {
+	_, err := exec.LookPath(cmd)
+	return err == nil
 }

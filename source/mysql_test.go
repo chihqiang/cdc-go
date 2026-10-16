@@ -563,8 +563,8 @@ func TestOnRow_Update(t *testing.T) {
 		Table:  table,
 		Action: canal.UpdateAction,
 		Rows: [][]any{
-			{[]byte("1"), []byte("OldName")},  // old row
-			{[]byte("1"), []byte("NewName")},  // new row
+			{[]byte("1"), []byte("OldName")}, // old row
+			{[]byte("1"), []byte("NewName")}, // new row
 		},
 		Header: &replication.EventHeader{ServerID: 1, LogPos: 10, Timestamp: 1},
 	}
@@ -689,4 +689,19 @@ func TestOnPosSynced(t *testing.T) {
 	_ = json.Unmarshal(data, &savedPos)
 	assert.Equal(t, "mysql-bin.000003", savedPos.File)
 	assert.Equal(t, uint32(300), savedPos.Pos)
+}
+
+// ---- commandExists tests ----
+
+func TestCommandExists_True(t *testing.T) {
+	// "ls" is available on all Unix-like systems.
+	assert.True(t, commandExists("ls"))
+}
+
+func TestCommandExists_False(t *testing.T) {
+	assert.False(t, commandExists("this-command-does-not-exist-12345"))
+}
+
+func TestCommandExists_EmptyString(t *testing.T) {
+	assert.False(t, commandExists(""))
 }

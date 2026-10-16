@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/pkg/redisx"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -24,16 +23,19 @@ type RedisStore struct {
 // NewRedisStore Creates a new RedisStore
 func NewRedisStore(cfg RedisConfig) (*RedisStore, error) {
 	// Initializes the Redis client
-	rdb, err := redisx.Open(redisx.Config{
+	client := redis.NewClient(&redis.Options{
 		Addr:     cfg.Addr,
 		Password: cfg.Password,
 		DB:       cfg.DB,
 	})
-	if err != nil {
-		return nil, err
+	// The client connects lazily, so an address or a password that is wrong
+	// would only be noticed at the first read or write: the ping reports it
+	// here instead.
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		return nil, fmt.Errorf("failed to connect Redis: %w", err)
 	}
 	return &RedisStore{
-		client: rdb,
+		client: client,
 	}, nil
 }
 

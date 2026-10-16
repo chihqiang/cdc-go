@@ -118,7 +118,7 @@ services:
       JAVA_OPT: "-Duser.timezone=Asia/Shanghai"
     command: sh mqnamesrv
     healthcheck:
-      test: [ "CMD-SHELL", "echo stat | nc localhost 9876 | grep -q OK" ]
+      test: [ "CMD-SHELL", "nc -z -w 3 localhost 9876" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -138,11 +138,16 @@ services:
       BROKER_ID: 0
       BROKER_CLUSTER_NAME: DefaultCluster
       BROKER_NAME: broker-a
+    volumes:
+      # brokerIP1 = 127.0.0.1, so that a cdc-trigger running on the host is told
+      # to reach the broker through the published port instead of through an
+      # address that only exists inside the compose network.
+      - ./rocketmq/broker.conf:/home/rocketmq/broker.conf:ro
     depends_on:
       - rocketmq-nameserver
-    command: sh mqbroker -n rocketmq-nameserver:9876 autoCreateTopicEnable=true
+    command: sh mqbroker -n rocketmq-nameserver:9876 -c /home/rocketmq/broker.conf autoCreateTopicEnable=true
     healthcheck:
-      test: [ "CMD-SHELL", "echo brokerStatus | nc localhost 10911 | grep -q OK || exit 0" ]
+      test: [ "CMD-SHELL", "nc -z -w 3 localhost 10911" ]
       interval: 10s
       timeout: 5s
       retries: 10

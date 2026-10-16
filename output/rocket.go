@@ -37,8 +37,8 @@ type RocketMQConfig struct {
 // broker closes the connection, so a restart of RocketMQ does not leave the
 // output unable to publish ever again.
 type RocketMQOutput struct {
-	cfg      RocketMQConfig
-	options  []producer.Option
+	cfg     RocketMQConfig
+	options []producer.Option
 
 	mu       sync.Mutex
 	producer rocketmq.Producer

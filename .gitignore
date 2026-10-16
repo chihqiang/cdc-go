@@ -29,4 +29,5 @@ go.work.sum
 # .vscode/
 /*.pos
 /cdc-trigger
+/cdc-trigger-task
 /runtime/

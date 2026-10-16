@@ -70,9 +70,9 @@ type mockSource struct {
 	closed bool
 }
 
-func (m *mockSource) WithStore(store.IStore)                          {}
-func (m *mockSource) Run(ctx context.Context) error                  { return nil }
-func (m *mockSource) GetChanEventData() <-chan types.EventData       { return nil }
+func (m *mockSource) WithStore(store.IStore)                   {}
+func (m *mockSource) Run(ctx context.Context) error            { return nil }
+func (m *mockSource) GetChanEventData() <-chan types.EventData { return nil }
 func (m *mockSource) Close() error {
 	m.closed = true
 	return nil
