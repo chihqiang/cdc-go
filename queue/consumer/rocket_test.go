@@ -93,7 +93,7 @@ func (f *fakePushConsumer) deliver(ctx context.Context, msgs ...*primitive.Messa
 	return callback(ctx, msgs...)
 }
 
-// rocketMessage is one message as the output would have sent it.
+// rocketMessage is one message as the producer would have sent it.
 func rocketMessage(t *testing.T, table string) *primitive.MessageExt {
 	t.Helper()
 	return &primitive.MessageExt{

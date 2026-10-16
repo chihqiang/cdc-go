@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// mockMessage is one message as the output would have published it.
+// mockMessage is one message as the producer would have published it.
 type mockMessage struct{ payload []byte }
 
 func (m *mockMessage) Topic() string                                   { return "events" }

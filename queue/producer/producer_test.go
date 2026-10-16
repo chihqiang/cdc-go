@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// ---- mock output for SendWithRetry tests ----
+// ---- mock producer for SendWithRetry tests ----
 
-type mockOutput struct {
+type mockProducer struct {
 	mu      atomic.Int32
 	failN   int32 // number of times to fail before succeeding
 	sendErr error // error to return when failing
@@ -23,7 +23,7 @@ type mockOutput struct {
 	sent    []types.EventData
 }
 
-func (m *mockOutput) Send(ctx context.Context, event types.EventData) error {
+func (m *mockProducer) Send(ctx context.Context, event types.EventData) error {
 	n := m.mu.Add(1)
 	if int32(n) <= m.failN {
 		return m.sendErr
@@ -32,20 +32,20 @@ func (m *mockOutput) Send(ctx context.Context, event types.EventData) error {
 	return nil
 }
 
-func (m *mockOutput) Close() error {
+func (m *mockProducer) Close() error {
 	m.closed = true
 	return nil
 }
 
 func TestSendWithRetry_SuccessOnFirstTry(t *testing.T) {
-	out := &mockOutput{}
+	out := &mockProducer{}
 	err := SendWithRetry(context.Background(), out, types.EventData{}, 3)
 	assert.NoError(t, err)
 	assert.Len(t, out.sent, 1)
 }
 
 func TestSendWithRetry_RetriesThenSucceeds(t *testing.T) {
-	out := &mockOutput{failN: 2, sendErr: errors.New("network error")}
+	out := &mockProducer{failN: 2, sendErr: errors.New("network error")}
 	err := SendWithRetry(context.Background(), out, types.EventData{}, 3)
 	assert.NoError(t, err)
 	assert.Len(t, out.sent, 1)
@@ -53,7 +53,7 @@ func TestSendWithRetry_RetriesThenSucceeds(t *testing.T) {
 }
 
 func TestSendWithRetry_ExhaustsRetries(t *testing.T) {
-	out := &mockOutput{failN: 99, sendErr: errors.New("network error")}
+	out := &mockProducer{failN: 99, sendErr: errors.New("network error")}
 	err := SendWithRetry(context.Background(), out, types.EventData{}, 2)
 	assert.Error(t, err)
 	assert.Equal(t, "network error", err.Error())
@@ -61,7 +61,7 @@ func TestSendWithRetry_ExhaustsRetries(t *testing.T) {
 }
 
 func TestSendWithRetry_NonRetriableReturnsImmediately(t *testing.T) {
-	out := &mockOutput{failN: 99, sendErr: &json.MarshalerError{}}
+	out := &mockProducer{failN: 99, sendErr: &json.MarshalerError{}}
 	err := SendWithRetry(context.Background(), out, types.EventData{}, 3)
 	assert.Error(t, err)
 	// Should only have been called once, no retries.
@@ -71,7 +71,7 @@ func TestSendWithRetry_NonRetriableReturnsImmediately(t *testing.T) {
 func TestSendWithRetry_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	out := &mockOutput{failN: 99, sendErr: errors.New("network error")}
+	out := &mockProducer{failN: 99, sendErr: errors.New("network error")}
 	err := SendWithRetry(ctx, out, types.EventData{}, 3)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -96,14 +96,14 @@ func TestIsRetriable_GenericError(t *testing.T) {
 	assert.True(t, isRetriable(fmt.Errorf("wrapped: %w", errors.New("timeout"))))
 }
 
-func TestNewOutput_UnknownType(t *testing.T) {
-	_, err := NewOutput(Config{Type: "unknown"})
+func TestNewProducer_UnknownType(t *testing.T) {
+	_, err := NewProducer(Config{Type: "unknown"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not registered")
 }
 
-func TestNewOutput_Stdout(t *testing.T) {
-	out, err := NewOutput(Config{Type: OutputTypeStdout})
+func TestNewProducer_Stdout(t *testing.T) {
+	out, err := NewProducer(Config{Type: ProducerTypeStdout})
 	assert.NoError(t, err)
 	assert.NotNil(t, out)
 	assert.NoError(t, out.Close())
@@ -111,16 +111,16 @@ func TestNewOutput_Stdout(t *testing.T) {
 
 func TestRegister(t *testing.T) {
 	// Register is called by init(); verify it stored the creators.
-	_, exists := outputs[OutputTypeStdout]
+	_, exists := producers[ProducerTypeStdout]
 	assert.True(t, exists)
-	_, exists = outputs[OutputTypeRedis]
+	_, exists = producers[ProducerTypeRedis]
 	assert.True(t, exists)
 }
 
-// ---- stdout output tests ----
+// ---- stdout producer tests ----
 
-func TestStdoutOutput_Send(t *testing.T) {
-	out := &StdoutOutput{}
+func TestStdoutProducer_Send(t *testing.T) {
+	out := &StdoutProducer{}
 	event := types.EventData{
 		Time:     time.Now(),
 		ServerID: 1,
@@ -135,8 +135,8 @@ func TestStdoutOutput_Send(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestStdoutOutput_Send_InvalidJSON(t *testing.T) {
-	out := &StdoutOutput{}
+func TestStdoutProducer_Send_InvalidJSON(t *testing.T) {
+	out := &StdoutProducer{}
 	event := types.EventData{
 		Row: types.EventRowData{
 			Data: map[string]any{"bad": make(chan int)},
@@ -146,13 +146,13 @@ func TestStdoutOutput_Send_InvalidJSON(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestStdoutOutput_Close(t *testing.T) {
-	out := &StdoutOutput{}
+func TestStdoutProducer_Close(t *testing.T) {
+	out := &StdoutProducer{}
 	assert.NoError(t, out.Close())
 }
 
-func TestNewStdoutOutput(t *testing.T) {
-	out, err := NewStdoutOutput()
+func TestNewStdoutProducer(t *testing.T) {
+	out, err := NewStdoutProducer()
 	assert.NoError(t, err)
 	assert.NotNil(t, out)
 }

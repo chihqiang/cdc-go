@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/consumer"
+	"github.com/chihqiang/cdc-trigger/queue/consumer"
 	"github.com/chihqiang/cdc-trigger/types"
 	"github.com/chihqiang/logx"
 )

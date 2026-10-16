@@ -11,7 +11,7 @@ import (
 
 // RabbitMQConfig RabbitMQ configuration entity
 //
-// It describes the same topology the RabbitMQ output declares, so that pointing
+// It describes the same topology the RabbitMQ producer declares, so that pointing
 // both sides at the same exchange, queue and routing key connects them.
 type RabbitMQConfig struct {
 	URL string `json:"url,default=amqp://guest:guest@127.0.0.1:5672/"`
@@ -23,7 +23,7 @@ type RabbitMQConfig struct {
 	ExchangeType string `json:"exchange_type,default=direct"`
 	// RoutingKey is the key the queue is bound with. It defaults to the queue
 	// name, which is what a direct exchange needs to deliver the messages the
-	// output published with that key.
+	// producer published with that key.
 	RoutingKey string `json:"routing_key"`
 	Queue      string `json:"queue,default=cdc-trigger-events"`
 	Durable    bool   `json:"durable,default=true"`
@@ -265,7 +265,7 @@ func (r *RabbitMQConsumer) dial() (rabbitSubscription, error) {
 	subscription.ch = ch
 
 	// Declaring the topology here as well means a consumer that starts before the
-	// output finds the exchange and the queue ready, instead of failing with
+	// producer finds the exchange and the queue ready, instead of failing with
 	// not_found. A declaration that disagrees with the existing one is refused by
 	// the broker, which is what keeps the two sides from silently diverging.
 	if cfg.Exchange != "" {

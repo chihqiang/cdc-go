@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// pushedPayload is one event with the given table, as an output would LPUSH it.
+// pushedPayload is one event with the given table, as a producer would LPUSH it.
 func pushedPayload(t *testing.T, table string) []byte {
 	t.Helper()
 	event := sampleEvent()
@@ -24,7 +24,7 @@ func pushedPayload(t *testing.T, table string) []byte {
 	return payload
 }
 
-// pushToRedis publishes the payloads the way the Redis output does: LPUSH puts
+// pushToRedis publishes the payloads the way the Redis producer does: LPUSH puts
 // every new event at the head, so BRPOP takes them back out in that order.
 func pushToRedis(t *testing.T, addr, key string, payloads ...[]byte) {
 	t.Helper()
@@ -58,7 +58,7 @@ func TestNewRedisConsumer_Success(t *testing.T) {
 	assert.NoError(t, c.Close())
 }
 
-func TestNewRedisConsumer_KeyDefaultsToTheOutputKey(t *testing.T) {
+func TestNewRedisConsumer_KeyDefaultsToTheProducerKey(t *testing.T) {
 	mr, err := miniredis.Run()
 	assert.NoError(t, err)
 	defer mr.Close()
@@ -67,7 +67,7 @@ func TestNewRedisConsumer_KeyDefaultsToTheOutputKey(t *testing.T) {
 	assert.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
 
-	// The same default as the Redis output, so that both sides are connected
+	// The same default as the Redis producer, so that both sides are connected
 	// without either of them naming the key.
 	assert.Equal(t, "cdc-trigger-events", c.cfg.Key)
 }

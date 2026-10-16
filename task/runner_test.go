@@ -96,7 +96,7 @@ func TestRun_ReadsTheValueWhateverTypeItArrivedAs(t *testing.T) {
 
 func TestRun_IgnoresTablesNobodyWatches(t *testing.T) {
 	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
-	// A subscription covers what the output published, which can be more tables
+	// A subscription covers what the producer published, which can be more tables
 	// than the tasks watch.
 	c := &fakeConsumer{events: []types.EventData{
 		change("app", "other", map[string]any{"id": int64(1)}),

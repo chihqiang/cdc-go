@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// sampleEvent is one event as the output would have published it.
+// sampleEvent is one event as the producer would have published it.
 func sampleEvent() types.EventData {
 	return types.EventData{
 		Time:     time.Date(2024, 5, 1, 12, 0, 0, 0, time.UTC),

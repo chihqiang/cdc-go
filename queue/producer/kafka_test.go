@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewKafkaOutput(t *testing.T) {
-	out, err := NewKafkaOutput(KafkaConfig{
+func TestNewKafkaProducer(t *testing.T) {
+	out, err := NewKafkaProducer(KafkaConfig{
 		Brokers: []string{"127.0.0.1:9092"},
 		Topic:   "test-topic",
 	})
@@ -24,8 +24,8 @@ func TestNewKafkaOutput(t *testing.T) {
 	assert.True(t, out.writer.AllowAutoTopicCreation)
 }
 
-func TestKafkaOutput_Send_InvalidJSON(t *testing.T) {
-	out, _ := NewKafkaOutput(KafkaConfig{
+func TestKafkaProducer_Send_InvalidJSON(t *testing.T) {
+	out, _ := NewKafkaProducer(KafkaConfig{
 		Brokers: []string{"127.0.0.1:9092"},
 		Topic:   "test-topic",
 	})
@@ -54,8 +54,8 @@ func TestKafkaOutput_Send_InvalidJSON(t *testing.T) {
 	t.Fatal("expected a non-retriable JSON error")
 }
 
-func TestKafkaOutput_Close(t *testing.T) {
-	out, _ := NewKafkaOutput(KafkaConfig{
+func TestKafkaProducer_Close(t *testing.T) {
+	out, _ := NewKafkaProducer(KafkaConfig{
 		Brokers: []string{"127.0.0.1:9092"},
 		Topic:   "test-topic",
 	})

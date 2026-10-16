@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/consumer"
+	"github.com/chihqiang/cdc-trigger/queue/consumer"
 	"github.com/chihqiang/cdc-trigger/task"
 	"github.com/chihqiang/cli"
 	"github.com/chihqiang/logx"

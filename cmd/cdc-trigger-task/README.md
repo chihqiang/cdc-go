@@ -65,12 +65,12 @@ watching each event's `database.table`:
 ```
 
 For Kafka, the producer and consumer must use the same broker and topic. For
-example, configure `output.type: kafka` and `output.kafka` in `config.yml`, and
+example, configure `producer.type: kafka` and `producer.kafka` in `config.yml`, and
 configure `consumer.type: kafka` and `consumer.kafka` in `config.task.yml`:
 
 ```yaml
 # config.yml
-output:
+producer:
   type: kafka
   kafka:
     brokers:

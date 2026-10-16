@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/chihqiang/cdc-trigger/config"
-	"github.com/chihqiang/cdc-trigger/output"
+	"github.com/chihqiang/cdc-trigger/queue/producer"
 	"github.com/chihqiang/cdc-trigger/source"
 	"github.com/chihqiang/cdc-trigger/store"
 	"github.com/chihqiang/cdc-trigger/types"
@@ -22,13 +22,13 @@ func TestSetupComponents_InvalidStoreType(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to create store")
 }
 
-func TestSetupComponents_InvalidOutputType(t *testing.T) {
+func TestSetupComponents_InvalidProducerType(t *testing.T) {
 	// File store will succeed, source will fail because it tries to
 	// connect to MySQL. The store should be closed to avoid a leak.
 	cfg := &config.Config{
 		Store:  store.Config{Type: store.FileStoreType, File: store.FileConfig{Dir: t.TempDir()}},
 		Source: source.Config{Type: source.SourceTypeMysql, Mysql: source.MysqlConfig{Addr: "127.0.0.1:1"}},
-		Output: output.Config{Type: "unknown"},
+		Producer: producer.Config{Type: "unknown"},
 	}
 
 	_, _, _, err := SetupComponents(cfg)
@@ -48,19 +48,19 @@ func TestListenCommand(t *testing.T) {
 }
 
 func TestCloseSetupComponents_StdoutAndFile(t *testing.T) {
-	// Test with real file store and stdout output, plus a mock source.
+	// Test with real file store and stdout producer, plus a mock source.
 	iStore, err := store.NewStore(store.Config{
 		Type: store.FileStoreType,
 		File: store.FileConfig{Dir: t.TempDir()},
 	})
 	assert.NoError(t, err)
 
-	iOutput, err := output.NewOutput(output.Config{Type: output.OutputTypeStdout})
+	iProducer, err := producer.NewProducer(producer.Config{Type: producer.ProducerTypeStdout})
 	assert.NoError(t, err)
 
 	iSource := &mockSource{}
 
-	CloseSetupComponents(iSource, iStore, iOutput)
+	CloseSetupComponents(iSource, iStore, iProducer)
 	assert.True(t, iSource.closed)
 }
 

@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/chihqiang/cdc-trigger/config"
-	"github.com/chihqiang/cdc-trigger/output"
+	"github.com/chihqiang/cdc-trigger/queue/producer"
 	"github.com/chihqiang/cli"
 	"github.com/chihqiang/logx"
 )
@@ -14,7 +14,7 @@ import (
 func ListenCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "listen",
-		Usage: "Listen to CDC events without sending them to any output",
+		Usage: "Listen to CDC events without sending them to any producer",
 		Flags: []cli.Flag{},
 		Action: func(ctx context.Context, _ *cli.Input, _ *cli.Output) error {
 			cfg, ok := ctx.Value(ContextValueConfig).(*config.Config)
@@ -26,9 +26,9 @@ func ListenCommand() *cli.Command {
 	}
 }
 
-// Listen starts the entire CDC listening process, including data source, storage, and output handling
+// Listen starts the entire CDC listening process, including data source, storage, and producer handling
 func Listen(ctx context.Context, config *config.Config) error {
-	iSource, iStore, iOutput, err := SetupComponents(config)
+	iSource, iStore, iProducer, err := SetupComponents(config)
 	if err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func Listen(ctx context.Context, config *config.Config) error {
 		close(sourceErrChan)
 	}()
 
-	// One consumer, so the events reach the output in the order the source
+	// One consumer, so the events reach the producer in the order the source
 	// produced them: a pool of them lets a later row overtake an earlier one
 	// on the way out.
 	var consumerWg sync.WaitGroup
@@ -62,7 +62,7 @@ func Listen(ctx context.Context, config *config.Config) error {
 					logx.Info("event channel closed, consumer exiting")
 					return
 				}
-				if err := output.SendWithRetry(ctx, iOutput, event, 3); err != nil {
+				if err := producer.SendWithRetry(ctx, iProducer, event, 3); err != nil {
 					logx.Error("failed to send event after retries, error: %v, db: %s, table: %s, type: %s, pos: %d",
 						err, event.Row.Database, event.Row.Table, event.Row.Type, event.Pos)
 				}
@@ -78,15 +78,15 @@ func Listen(ctx context.Context, config *config.Config) error {
 		// to finish before closing the components.
 		cancel()
 		consumerWg.Wait()
-		CloseSetupComponents(iSource, iStore, iOutput)
+		CloseSetupComponents(iSource, iStore, iProducer)
 		return err
 	}
 	logx.Info("CDC process completed successfully")
 
 	// The source has stopped and closed its event channel, so the consumer
-	// will see the close and exit. Wait for it before closing the output to
+	// will see the close and exit. Wait for it before closing the producer to
 	// avoid a race where a Send is in flight while Close is called.
 	consumerWg.Wait()
-	CloseSetupComponents(iSource, iStore, iOutput)
+	CloseSetupComponents(iSource, iStore, iProducer)
 	return nil
 }

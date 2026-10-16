@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -20,12 +20,12 @@ type PulsarConfig struct {
 	ConnectionTimeout int    `json:"connection_timeout,default=30"`
 }
 
-// PulsarOutput Pulsar output implementation.
+// PulsarProducer Pulsar producer implementation.
 //
 // The client and producer are kept for the lifetime of the process and rebuilt
 // when the broker closes the connection, so a restart of Pulsar does not leave
-// the output unable to publish ever again.
-type PulsarOutput struct {
+// the producer unable to publish ever again.
+type PulsarProducer struct {
 	cfg PulsarConfig
 
 	mu       sync.Mutex
@@ -38,9 +38,9 @@ type PulsarOutput struct {
 	dialFn func() (pulsar.Client, pulsar.Producer, error)
 }
 
-// NewPulsarOutput initializes the Pulsar client and producer
-func NewPulsarOutput(cfg PulsarConfig) (*PulsarOutput, error) {
-	o := &PulsarOutput{cfg: cfg}
+// NewPulsarProducer initializes the Pulsar client and producer
+func NewPulsarProducer(cfg PulsarConfig) (*PulsarProducer, error) {
+	o := &PulsarProducer{cfg: cfg}
 	client, producer, err := o.dial()
 	if err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func NewPulsarOutput(cfg PulsarConfig) (*PulsarOutput, error) {
 }
 
 // dial creates a new Pulsar client and producer from the configuration.
-func (p *PulsarOutput) dial() (pulsar.Client, pulsar.Producer, error) {
+func (p *PulsarProducer) dial() (pulsar.Client, pulsar.Producer, error) {
 	if p.dialFn != nil {
 		return p.dialFn()
 	}
@@ -83,14 +83,14 @@ func (p *PulsarOutput) dial() (pulsar.Client, pulsar.Producer, error) {
 }
 
 // reconnect replaces a client and producer that are no longer usable.
-// It is a no-op if the output is closed or if another goroutine has already
+// It is a no-op if the producer is closed or if another goroutine has already
 // reconnected.
-func (p *PulsarOutput) reconnect() error {
+func (p *PulsarProducer) reconnect() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if p.closed {
-		return errors.New("the Pulsar output is closed")
+		return errors.New("the Pulsar producer is closed")
 	}
 
 	// Close the old client and producer before creating new ones.
@@ -114,7 +114,7 @@ func (p *PulsarOutput) reconnect() error {
 
 // Send sends an event to Pulsar. If the producer is in a failed state, it
 // reconnects once and retries the send before returning the error.
-func (p *PulsarOutput) Send(ctx context.Context, event types.EventData) error {
+func (p *PulsarProducer) Send(ctx context.Context, event types.EventData) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -126,7 +126,7 @@ func (p *PulsarOutput) Send(ctx context.Context, event types.EventData) error {
 	p.mu.Unlock()
 
 	if closed {
-		return errors.New("the Pulsar output is closed")
+		return errors.New("the Pulsar producer is closed")
 	}
 	if producer == nil {
 		// No producer available, try to reconnect.
@@ -165,7 +165,7 @@ func (p *PulsarOutput) Send(ctx context.Context, event types.EventData) error {
 }
 
 // Close closes the producer and client
-func (p *PulsarOutput) Close() error {
+func (p *PulsarProducer) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
