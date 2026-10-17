@@ -12,7 +12,7 @@ import (
 
 // RedisConfig Redis configuration entity
 //
-// It reads the list the Redis output writes to -- LPUSH on the producing side
+// It reads the list the Redis producer writes to -- LPUSH on the producing side
 // and BRPOP here make that list a FIFO queue -- so the two sides are pointed at
 // the same key to be connected.
 type RedisConfig struct {
@@ -91,9 +91,9 @@ func (r *RedisConsumer) Consume(ctx context.Context, handler Handler) error {
 			return err
 		}
 
-		// BRPOP answers with the key and the value that was popped; the oldest
-		// value comes first, which is what pairs it with the LPUSH of the
-		// output.
+	// BRPOP answers with the key and the value that was popped; the oldest
+	// value comes first, which is what pairs it with the LPUSH of the
+	// producer.
 		values, err := r.rdb.BRPop(ctx, r.timeout, r.cfg.Key).Result()
 		if err != nil {
 			switch {

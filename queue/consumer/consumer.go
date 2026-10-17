@@ -1,4 +1,4 @@
-// Package consumer reads the events the output package publishes.
+// Package consumer reads the events the producer package publishes.
 //
 // It is the mirror image of that package: the same type registry, the same
 // per-middleware configuration and the same constructor shape, but it pulls
@@ -56,7 +56,7 @@ func Register(consumerType ConsumerType, fn func(Config) (IConsumer, error)) {
 }
 
 // Config Defines the consumer configuration structure
-// It is the counterpart of output.Config: one section per middleware, of which
+// It is the counterpart of producer.Config: one section per middleware, of which
 // the one named by Type is used.
 type Config struct {
 	Type     ConsumerType   `json:"type,required"`
@@ -141,7 +141,7 @@ func processMessage(ctx context.Context, handler Handler, payload []byte) dispos
 	return ackDisposition
 }
 
-// decodeEvent parses the JSON an output published back into an event.
+// decodeEvent parses the JSON a producer published back into an event.
 func decodeEvent(payload []byte) (types.EventData, error) {
 	var event types.EventData
 	if err := json.Unmarshal(payload, &event); err != nil {

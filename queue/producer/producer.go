@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -11,45 +11,45 @@ import (
 	"github.com/chihqiang/cdc-trigger/types"
 )
 
-type OutputType string
+type ProducerType string
 
 var (
-	OutputTypeStdout   OutputType = "stdout"
-	OutputTypeRedis    OutputType = "redis"
-	OutputTypeKafka    OutputType = "kafka"
-	OutputTypeRabbitMQ OutputType = "rabbitmq"
-	OutputTypeRocketMQ OutputType = "rocketmq"
-	OutputTypePulsar   OutputType = "pulsar"
-	outputs                       = map[OutputType]func(Config) (IOutput, error){}
+	ProducerTypeStdout   ProducerType = "stdout"
+	ProducerTypeRedis    ProducerType = "redis"
+	ProducerTypeKafka    ProducerType = "kafka"
+	ProducerTypeRabbitMQ ProducerType = "rabbitmq"
+	ProducerTypeRocketMQ ProducerType = "rocketmq"
+	ProducerTypePulsar   ProducerType = "pulsar"
+	producers                       = map[ProducerType]func(Config) (IProducer, error){}
 )
 
 func init() {
-	Register(OutputTypeStdout, func(config Config) (IOutput, error) {
-		return NewStdoutOutput()
+	Register(ProducerTypeStdout, func(config Config) (IProducer, error) {
+		return NewStdoutProducer()
 	})
-	Register(OutputTypeRedis, func(cfg Config) (IOutput, error) {
-		return NewRedisOutput(cfg.Redis)
+	Register(ProducerTypeRedis, func(cfg Config) (IProducer, error) {
+		return NewRedisProducer(cfg.Redis)
 	})
-	Register(OutputTypeKafka, func(cfg Config) (IOutput, error) {
-		return NewKafkaOutput(cfg.Kafka)
+	Register(ProducerTypeKafka, func(cfg Config) (IProducer, error) {
+		return NewKafkaProducer(cfg.Kafka)
 	})
-	Register(OutputTypeRabbitMQ, func(cfg Config) (IOutput, error) {
-		return NewRabbitMQOutput(cfg.RabbitMQ)
+	Register(ProducerTypeRabbitMQ, func(cfg Config) (IProducer, error) {
+		return NewRabbitMQProducer(cfg.RabbitMQ)
 	})
-	Register(OutputTypeRocketMQ, func(cfg Config) (IOutput, error) {
-		return NewRocketMQOutput(cfg.RocketMQ)
+	Register(ProducerTypeRocketMQ, func(cfg Config) (IProducer, error) {
+		return NewRocketMQProducer(cfg.RocketMQ)
 	})
-	Register(OutputTypePulsar, func(cfg Config) (IOutput, error) {
-		return NewPulsarOutput(cfg.Pulsar)
+	Register(ProducerTypePulsar, func(cfg Config) (IProducer, error) {
+		return NewPulsarProducer(cfg.Pulsar)
 	})
 }
 
-func Register(outputType OutputType, fn func(Config) (IOutput, error)) {
-	outputs[outputType] = fn
+func Register(producerType ProducerType, fn func(Config) (IProducer, error)) {
+	producers[producerType] = fn
 }
 
 type Config struct {
-	Type     OutputType     `json:"type,required"`
+	Type     ProducerType     `json:"type,required"`
 	Redis    RedisConfig    `json:"redis"`
 	Kafka    KafkaConfig    `json:"kafka"`
 	RabbitMQ RabbitMQConfig `json:"rabbitmq"`
@@ -57,21 +57,21 @@ type Config struct {
 	Pulsar   PulsarConfig   `json:"pulsar"`
 }
 
-// IOutput Defines the event output interface
-type IOutput interface {
+// IProducer Defines the event producer interface
+type IProducer interface {
 	// Send Sends an event to the downstream
 	Send(ctx context.Context, event types.EventData) error
 	// Close Closes the resource
 	Close() error
 }
 
-func NewOutput(cfg Config) (IOutput, error) {
+func NewProducer(cfg Config) (IProducer, error) {
 	// Look up the corresponding constructor function
-	creator, exists := outputs[cfg.Type]
+	creator, exists := producers[cfg.Type]
 	if !exists {
-		return nil, fmt.Errorf("output type %s is not registered", cfg.Type)
+		return nil, fmt.Errorf("producer type %s is not registered", cfg.Type)
 	}
-	// Call the constructor function to create the output instance
+	// Call the constructor function to create the producer instance
 	return creator(cfg)
 }
 
@@ -100,10 +100,10 @@ func isRetriable(err error) bool {
 // SendWithRetry Sends with retry functionality using exponential backoff.
 // Non-retriable errors (e.g. JSON serialization failures) return immediately
 // without wasting retry attempts.
-func SendWithRetry(ctx context.Context, output IOutput, event types.EventData, maxRetries int) error {
+func SendWithRetry(ctx context.Context, producer IProducer, event types.EventData, maxRetries int) error {
 	var lastErr error
 	for i := 0; i <= maxRetries; i++ {
-		if err := output.Send(ctx, event); err == nil {
+		if err := producer.Send(ctx, event); err == nil {
 			return nil
 		} else {
 			lastErr = err

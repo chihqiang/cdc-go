@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -65,10 +65,10 @@ func TestBuildOptions_NoCredentials(t *testing.T) {
 	assert.Len(t, opts, 2) // nsresolver, retry only
 }
 
-// ---- RocketMQOutput tests ----
+// ---- RocketMQProducer tests ----
 
-func TestRocketMQOutput_Send_ClosedOutput(t *testing.T) {
-	r := &RocketMQOutput{
+func TestRocketMQProducer_Send_ClosedProducer(t *testing.T) {
+	r := &RocketMQProducer{
 		cfg:    RocketMQConfig{Topic: "test-topic"},
 		closed: true,
 	}
@@ -79,9 +79,9 @@ func TestRocketMQOutput_Send_ClosedOutput(t *testing.T) {
 	assert.Contains(t, err.Error(), "closed")
 }
 
-func TestRocketMQOutput_Send_InvalidJSON(t *testing.T) {
+func TestRocketMQProducer_Send_InvalidJSON(t *testing.T) {
 	// Even with a nil producer, JSON marshal happens first.
-	r := &RocketMQOutput{
+	r := &RocketMQProducer{
 		cfg: RocketMQConfig{Topic: "test-topic"},
 	}
 
@@ -96,15 +96,15 @@ func TestRocketMQOutput_Send_InvalidJSON(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestRocketMQOutput_Send_NilProducer(t *testing.T) {
+func TestRocketMQProducer_Send_NilProducer(t *testing.T) {
 	// When producer is nil and closed is false, Send will try to
 	// reconnect, which may take a long time or fail. We skip this
 	// test to avoid flaky behavior in CI.
 	t.Skip("requires a real RocketMQ broker")
 }
 
-func TestRocketMQOutput_Close(t *testing.T) {
-	r := &RocketMQOutput{
+func TestRocketMQProducer_Close(t *testing.T) {
+	r := &RocketMQProducer{
 		cfg: RocketMQConfig{Topic: "test-topic"},
 	}
 
@@ -113,8 +113,8 @@ func TestRocketMQOutput_Close(t *testing.T) {
 	assert.True(t, r.closed)
 }
 
-func TestRocketMQOutput_Close_AlreadyClosed(t *testing.T) {
-	r := &RocketMQOutput{
+func TestRocketMQProducer_Close_AlreadyClosed(t *testing.T) {
+	r := &RocketMQProducer{
 		cfg:    RocketMQConfig{Topic: "test-topic"},
 		closed: true,
 	}
@@ -123,8 +123,8 @@ func TestRocketMQOutput_Close_AlreadyClosed(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestRocketMQOutput_Close_NoProducer(t *testing.T) {
-	r := &RocketMQOutput{
+func TestRocketMQProducer_Close_NoProducer(t *testing.T) {
+	r := &RocketMQProducer{
 		cfg: RocketMQConfig{Topic: "test-topic"},
 	}
 
@@ -133,8 +133,8 @@ func TestRocketMQOutput_Close_NoProducer(t *testing.T) {
 	assert.True(t, r.closed)
 }
 
-func TestRocketMQOutput_Reconnect_Closed(t *testing.T) {
-	r := &RocketMQOutput{
+func TestRocketMQProducer_Reconnect_Closed(t *testing.T) {
+	r := &RocketMQProducer{
 		cfg:    RocketMQConfig{Topic: "test-topic"},
 		closed: true,
 	}

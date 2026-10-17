@@ -20,9 +20,9 @@
 
 - **Real-time Capture**: Monitor database change events in real-time through binlog parsing
 - **Unified Event Format**: Convert changes from different databases into a consistent JSON format
-- **Multiple Output Support**: Send events to various downstream systems including stdout, Redis, Kafka, RabbitMQ, RocketMQ, and Pulsar
+- **Multiple Producer Support**: Send events to various downstream systems including stdout, Redis, Kafka, RabbitMQ, RocketMQ, and Pulsar
 - **Checkpoint Resumption**: Store synchronization positions to achieve breakpoint resumption
-- **Extensible Architecture**: Easy to extend with new data sources and output types
+- **Extensible Architecture**: Easy to extend with new data sources and producer types
 - **Worker Pool Processing**: Process events efficiently with worker goroutines
 - **Graceful Shutdown**: Properly handle context cancellation and resource cleanup
 - **Single Source Configuration**: One YAML file per deployment, with `${VAR}` / `${VAR:-fallback}` environment substitution inside it
@@ -33,7 +33,7 @@
 
 - MySQL (via binlog parsing)
 
-### Outputs
+### Producers
 
 - Standard Output (stdout)
 - [Redis](https://redis.io/)
@@ -54,7 +54,7 @@
 - Go 1.23+ environment
 - MySQL server with binary logging enabled
 - Correct database access permissions (MySQL user needs binlog read permissions)
-- If using other output components, ensure corresponding services are available
+- If using other producer components, ensure corresponding services are available
 
 ### Installation
 
@@ -104,7 +104,7 @@ cdc-trigger listen -c path/to/config.yml
 
 ## Configuration File Description
 
-The configuration file uses YAML format and consists of three main parts: `store` (offset storage), `source` (data source), and `output` (output destination).
+The configuration file uses YAML format and consists of three main parts: `store` (offset storage), `source` (data source), and `producer` (producer destination).
 
 ### Example Configuration
 
@@ -142,23 +142,23 @@ source:
     include_table_regex:              # Tables to include (regex patterns, empty = all except excluded)
       # - "cdctrigger.*"              # Example: only listen to cdctrigger tables
 
-# ---------- Output Configuration ----------
-output:
-  type: "${OUTPUT_TYPE:-stdout}"       # Output type: stdout / kafka / redis / rabbitmq / rocketmq / pulsar
+# ---------- Producer Configuration ----------
+producer:
+  type: "${PRODUCER_TYPE:-stdout}"       # Producer type: stdout / kafka / redis / rabbitmq / rocketmq / pulsar
 
   # Kafka settings
   kafka:
     brokers:
-      - "${OUTPUT_KAFKA_BROKERS:-127.0.0.1:9092}"  # Kafka broker list
-    topic: "${OUTPUT_KAFKA_TOPIC:-cdc-trigger-events}"  # Kafka topic name
+      - "${PRODUCER_KAFKA_BROKERS:-127.0.0.1:9092}"  # Kafka broker list
+    topic: "${PRODUCER_KAFKA_TOPIC:-cdc-trigger-events}"  # Kafka topic name
 
   # RabbitMQ settings
   rabbitmq:
-    url: "${OUTPUT_RABBITMQ_URL:-amqp://guest:guest@127.0.0.1:5672/}" # RabbitMQ connection URL
-    exchange: "${OUTPUT_RABBITMQ_EXCHANGE:-cdc-trigger-exchange}" # Exchange name (declared and bound on startup)
-    exchange_type: "${OUTPUT_RABBITMQ_EXCHANGE_TYPE:-direct}"     # Exchange type: direct / fanout / topic (headers is refused)
-    routing_key: "${OUTPUT_RABBITMQ_ROUTING_KEY:-cdc-trigger-events}" # Publish key, and the key the queue is bound with
-    queue: "${OUTPUT_RABBITMQ_QUEUE:-cdc-trigger-events}"      # Queue name
+    url: "${PRODUCER_RABBITMQ_URL:-amqp://guest:guest@127.0.0.1:5672/}" # RabbitMQ connection URL
+    exchange: "${PRODUCER_RABBITMQ_EXCHANGE:-cdc-trigger-exchange}" # Exchange name (declared and bound on startup)
+    exchange_type: "${PRODUCER_RABBITMQ_EXCHANGE_TYPE:-direct}"     # Exchange type: direct / fanout / topic (headers is refused)
+    routing_key: "${PRODUCER_RABBITMQ_ROUTING_KEY:-cdc-trigger-events}" # Publish key, and the key the queue is bound with
+    queue: "${PRODUCER_RABBITMQ_QUEUE:-cdc-trigger-events}"      # Queue name
     durable: true              # Whether the queue should survive server restarts (also makes messages persistent)
     auto_delete: false         # Whether the queue should auto-delete when unused
     auto_ack: false            # Whether to auto-acknowledge messages (unused when publishing)
@@ -167,27 +167,27 @@ output:
 
   # Redis settings
   redis:
-    addr: "${OUTPUT_REDIS_ADDR:-127.0.0.1:6379}"        # Redis address
-    password: "${OUTPUT_REDIS_PASSWORD:-}"              # Redis password
-    db: "${OUTPUT_REDIS_DB:-0}"                         # Redis database number
-    key: "${OUTPUT_REDIS_KEY:-cdc-trigger-events}"      # Redis key for storing events
+    addr: "${PRODUCER_REDIS_ADDR:-127.0.0.1:6379}"        # Redis address
+    password: "${PRODUCER_REDIS_PASSWORD:-}"              # Redis password
+    db: "${PRODUCER_REDIS_DB:-0}"                         # Redis database number
+    key: "${PRODUCER_REDIS_KEY:-cdc-trigger-events}"      # Redis key for storing events
 
   # RocketMQ settings
   rocketmq:
     servers:
-      - "${OUTPUT_ROCKETMQ_SERVERS:-127.0.0.1:9876}"  # RocketMQ NameServer address
-    topic: "${OUTPUT_ROCKETMQ_TOPIC:-cdc-trigger-events}"  # RocketMQ topic name
-    group: "${OUTPUT_ROCKETMQ_GROUP:-cdc-trigger-group}"   # Producer group name
-    namespace: "${OUTPUT_ROCKETMQ_NAMESPACE:-}"        # Namespace
-    access_key: "${OUTPUT_ROCKETMQ_ACCESS_KEY:-}"      # Access key
-    secret_key: "${OUTPUT_ROCKETMQ_SECRET_KEY:-}"      # Secret key
+      - "${PRODUCER_ROCKETMQ_SERVERS:-127.0.0.1:9876}"  # RocketMQ NameServer address
+    topic: "${PRODUCER_ROCKETMQ_TOPIC:-cdc-trigger-events}"  # RocketMQ topic name
+    group: "${PRODUCER_ROCKETMQ_GROUP:-cdc-trigger-group}"   # Producer group name
+    namespace: "${PRODUCER_ROCKETMQ_NAMESPACE:-}"        # Namespace
+    access_key: "${PRODUCER_ROCKETMQ_ACCESS_KEY:-}"      # Access key
+    secret_key: "${PRODUCER_ROCKETMQ_SECRET_KEY:-}"      # Secret key
     retry: 3                   # Retry count on failure
 
   # Pulsar settings
   pulsar:
-    url: "${OUTPUT_PULSAR_URL:-pulsar://127.0.0.1:6650}"  # Pulsar broker URL
-    topic: "${OUTPUT_PULSAR_TOPIC:-cdc-trigger-events}"   # Pulsar topic name
-    token: "${OUTPUT_PULSAR_TOKEN:-}"        # Optional authentication token
+    url: "${PRODUCER_PULSAR_URL:-pulsar://127.0.0.1:6650}"  # Pulsar broker URL
+    topic: "${PRODUCER_PULSAR_TOPIC:-cdc-trigger-events}"   # Pulsar topic name
+    token: "${PRODUCER_PULSAR_TOKEN:-}"        # Optional authentication token
     operation_timeout: 30           # Operation timeout in seconds
     connection_timeout: 30          # Connection timeout in seconds
 ```
@@ -230,7 +230,7 @@ You can use Docker to run cdc-trigger in containerized environments. Here's how 
 
 The image ships `/app/config.yml` (the file from the repository root) and is started with
 `cdc-trigger -c /app/config.yml`. Every `-e` below fills a `${VAR:-fallback}` reference in that file,
-so the same image can be pointed at another database, storage or output without a rebuild:
+so the same image can be pointed at another database, storage or producer without a rebuild:
 
 ```bash
 # =========================
@@ -255,11 +255,11 @@ docker run -it --rm \
     -e STORE_REDIS_ADDR="127.0.0.1:6379" \
     -e STORE_REDIS_PASSWORD="123456" \
     -e STORE_REDIS_DB="1" \
-    -e OUTPUT_TYPE="redis" \
-    -e OUTPUT_REDIS_ADDR="127.0.0.1:6379" \
-    -e OUTPUT_REDIS_PASSWORD="123456" \
-    -e OUTPUT_REDIS_DB="1" \
-    -e OUTPUT_REDIS_KEY="cdc-trigger-events" \
+    -e PRODUCER_TYPE="redis" \
+    -e PRODUCER_REDIS_ADDR="127.0.0.1:6379" \
+    -e PRODUCER_REDIS_PASSWORD="123456" \
+    -e PRODUCER_REDIS_DB="1" \
+    -e PRODUCER_REDIS_KEY="cdc-trigger-events" \
     zhiqiangwang/app:cdc-trigger
 ```
 
@@ -274,13 +274,13 @@ docker run -it --rm \
 
 The environment variables the bundled `config.yml` reads are `STORE_TYPE`, `STORE_FILE_DIR`,
 `STORE_REDIS_ADDR`, `STORE_REDIS_PASSWORD`, `STORE_REDIS_DB`, `SOURCE_TYPE`, `SOURCE_MYSQL_ADDR`,
-`SOURCE_MYSQL_USER`, `SOURCE_MYSQL_PASSWORD`, `OUTPUT_TYPE`, `OUTPUT_KAFKA_BROKERS`,
-`OUTPUT_KAFKA_TOPIC`, `OUTPUT_RABBITMQ_URL`, `OUTPUT_RABBITMQ_EXCHANGE`, `OUTPUT_RABBITMQ_EXCHANGE_TYPE`,
-`OUTPUT_RABBITMQ_ROUTING_KEY`, `OUTPUT_RABBITMQ_QUEUE`,
-`OUTPUT_REDIS_ADDR`, `OUTPUT_REDIS_PASSWORD`, `OUTPUT_REDIS_DB`, `OUTPUT_REDIS_KEY`,
-`OUTPUT_ROCKETMQ_SERVERS`, `OUTPUT_ROCKETMQ_TOPIC`, `OUTPUT_ROCKETMQ_GROUP`,
-`OUTPUT_ROCKETMQ_NAMESPACE`, `OUTPUT_ROCKETMQ_ACCESS_KEY`, `OUTPUT_ROCKETMQ_SECRET_KEY`,
-`OUTPUT_PULSAR_URL`, `OUTPUT_PULSAR_TOPIC` and `OUTPUT_PULSAR_TOKEN`.
+`SOURCE_MYSQL_USER`, `SOURCE_MYSQL_PASSWORD`, `PRODUCER_TYPE`, `PRODUCER_KAFKA_BROKERS`,
+`PRODUCER_KAFKA_TOPIC`, `PRODUCER_RABBITMQ_URL`, `PRODUCER_RABBITMQ_EXCHANGE`, `PRODUCER_RABBITMQ_EXCHANGE_TYPE`,
+`PRODUCER_RABBITMQ_ROUTING_KEY`, `PRODUCER_RABBITMQ_QUEUE`,
+`PRODUCER_REDIS_ADDR`, `PRODUCER_REDIS_PASSWORD`, `PRODUCER_REDIS_DB`, `PRODUCER_REDIS_KEY`,
+`PRODUCER_ROCKETMQ_SERVERS`, `PRODUCER_ROCKETMQ_TOPIC`, `PRODUCER_ROCKETMQ_GROUP`,
+`PRODUCER_ROCKETMQ_NAMESPACE`, `PRODUCER_ROCKETMQ_ACCESS_KEY`, `PRODUCER_ROCKETMQ_SECRET_KEY`,
+`PRODUCER_PULSAR_URL`, `PRODUCER_PULSAR_TOPIC` and `PRODUCER_PULSAR_TOKEN`.
 
 ## Notes
 

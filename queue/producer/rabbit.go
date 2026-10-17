@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -279,12 +279,12 @@ func (c *rabbitClient) publish(ctx context.Context, cfg RabbitMQConfig, body []b
 	}
 }
 
-// RabbitMQOutput RabbitMQ output implementation
+// RabbitMQProducer RabbitMQ producer implementation
 //
 // One connection is kept for the lifetime of the process and rebuilt when the
-// broker closes it, so a restart of RabbitMQ does not leave the output unable
+// broker closes it, so a restart of RabbitMQ does not leave the producer unable
 // to publish ever again.
-type RabbitMQOutput struct {
+type RabbitMQProducer struct {
 	config RabbitMQConfig
 
 	mu     sync.Mutex
@@ -292,12 +292,12 @@ type RabbitMQOutput struct {
 	closed bool
 }
 
-// NewRabbitMQOutput Creates a RabbitMQOutput, declares the exchange and the
+// NewRabbitMQProducer Creates a RabbitMQProducer, declares the exchange and the
 // queue and binds them together
-func NewRabbitMQOutput(cfg RabbitMQConfig) (*RabbitMQOutput, error) {
+func NewRabbitMQProducer(cfg RabbitMQConfig) (*RabbitMQProducer, error) {
 	cfg = normalizeRabbitConfig(cfg)
 
-	out := &RabbitMQOutput{config: cfg}
+	out := &RabbitMQProducer{config: cfg}
 	client, err := out.dial()
 	if err != nil {
 		return nil, err
@@ -320,13 +320,13 @@ func normalizeRabbitConfig(cfg RabbitMQConfig) RabbitMQConfig {
 
 // dial connects, declares the exchange, the queue and their binding, and puts
 // the channel in confirm mode.
-func (r *RabbitMQOutput) dial() (*rabbitClient, error) {
+func (r *RabbitMQProducer) dial() (*rabbitClient, error) {
 	cfg := r.config
 
 	if cfg.Exchange != "" && cfg.ExchangeType == "headers" {
 		// The queue is bound with a routing key and the messages carry no
 		// header condition, so a headers exchange could never route them.
-		return nil, fmt.Errorf("a %q exchange cannot be used as an output: the queue is bound with the routing key %q, while a headers exchange matches on message headers (use direct, fanout or topic)",
+		return nil, fmt.Errorf("a %q exchange cannot be used as a producer: the queue is bound with the routing key %q, while a headers exchange matches on message headers (use direct, fanout or topic)",
 			cfg.ExchangeType, cfg.RoutingKey)
 	}
 
@@ -385,12 +385,12 @@ func (r *RabbitMQOutput) dial() (*rabbitClient, error) {
 
 // current returns the client to publish on, dialing a new one after a previous
 // attempt to reconnect failed: the next event is what retries the connection.
-func (r *RabbitMQOutput) current() (*rabbitClient, error) {
+func (r *RabbitMQProducer) current() (*rabbitClient, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return nil, errors.New("the RabbitMQ output is closed")
+		return nil, errors.New("the RabbitMQ producer is closed")
 	}
 	if r.client == nil {
 		client, err := r.dial()
@@ -406,12 +406,12 @@ func (r *RabbitMQOutput) current() (*rabbitClient, error) {
 // whether it did. A client that is still healthy is kept, and a client another
 // worker has already replaced is left alone, so ten workers noticing the same
 // failure do not open ten connections.
-func (r *RabbitMQOutput) reconnect(stale *rabbitClient) (bool, error) {
+func (r *RabbitMQProducer) reconnect(stale *rabbitClient) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return false, errors.New("the RabbitMQ output is closed")
+		return false, errors.New("the RabbitMQ producer is closed")
 	}
 	if r.client != stale {
 		return false, nil
@@ -424,7 +424,7 @@ func (r *RabbitMQOutput) reconnect(stale *rabbitClient) (bool, error) {
 	stale.close()
 	client, err := r.dial()
 	if err != nil {
-		// Leave the output without a client rather than with a dead one; the
+		// Leave the producer without a client rather than with a dead one; the
 		// next event dials again.
 		r.client = nil
 		return false, err
@@ -436,7 +436,7 @@ func (r *RabbitMQOutput) reconnect(stale *rabbitClient) (bool, error) {
 // Send Serializes EventData to a JSON string and sends it to RabbitMQ. It
 // returns once the broker has confirmed the message, so a publish that RabbitMQ
 // never accepted is an error here and not a silent loss.
-func (r *RabbitMQOutput) Send(ctx context.Context, event types.EventData) error {
+func (r *RabbitMQProducer) Send(ctx context.Context, event types.EventData) error {
 	body, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal event: %w", err)
@@ -489,7 +489,7 @@ func deliveryMode(durable bool) uint8 {
 }
 
 // Close Closes the RabbitMQ connection
-func (r *RabbitMQOutput) Close() error {
+func (r *RabbitMQProducer) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

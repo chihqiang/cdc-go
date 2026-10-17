@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewRedisOutput_Success(t *testing.T) {
+func TestNewRedisProducer_Success(t *testing.T) {
 	mr, err := miniredis.Run()
 	assert.NoError(t, err)
 	defer mr.Close()
 
-	out, err := NewRedisOutput(RedisConfig{
+	out, err := NewRedisProducer(RedisConfig{
 		Addr: mr.Addr(),
 		Key:  "test-events",
 	})
@@ -25,14 +25,14 @@ func TestNewRedisOutput_Success(t *testing.T) {
 	assert.NoError(t, out.Close())
 }
 
-func TestNewRedisOutput_ConnectionError(t *testing.T) {
-	_, err := NewRedisOutput(RedisConfig{
+func TestNewRedisProducer_ConnectionError(t *testing.T) {
+	_, err := NewRedisProducer(RedisConfig{
 		Addr: "127.0.0.1:1",
 	})
 	assert.Error(t, err)
 }
 
-func TestNewRedisOutput_WithPassword(t *testing.T) {
+func TestNewRedisProducer_WithPassword(t *testing.T) {
 	mr, err := miniredis.Run()
 	assert.NoError(t, err)
 	defer mr.Close()
@@ -41,7 +41,7 @@ func TestNewRedisOutput_WithPassword(t *testing.T) {
 
 	// The password has to reach the client: without it the ping the constructor
 	// sends would be refused and this would fail.
-	out, err := NewRedisOutput(RedisConfig{
+	out, err := NewRedisProducer(RedisConfig{
 		Addr:     mr.Addr(),
 		Password: "secret",
 	})
@@ -50,12 +50,12 @@ func TestNewRedisOutput_WithPassword(t *testing.T) {
 	assert.NoError(t, out.Close())
 }
 
-func TestRedisOutput_Send_Success(t *testing.T) {
+func TestRedisProducer_Send_Success(t *testing.T) {
 	mr, err := miniredis.Run()
 	assert.NoError(t, err)
 	defer mr.Close()
 
-	out, _ := NewRedisOutput(RedisConfig{
+	out, _ := NewRedisProducer(RedisConfig{
 		Addr: mr.Addr(),
 		Key:  "test-events",
 	})
@@ -81,12 +81,12 @@ func TestRedisOutput_Send_Success(t *testing.T) {
 	assert.Len(t, list, 1)
 }
 
-func TestRedisOutput_Send_InvalidJSON(t *testing.T) {
+func TestRedisProducer_Send_InvalidJSON(t *testing.T) {
 	mr, err := miniredis.Run()
 	assert.NoError(t, err)
 	defer mr.Close()
 
-	out, _ := NewRedisOutput(RedisConfig{
+	out, _ := NewRedisProducer(RedisConfig{
 		Addr: mr.Addr(),
 		Key:  "test-events",
 	})
@@ -102,11 +102,11 @@ func TestRedisOutput_Send_InvalidJSON(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestRedisOutput_Close(t *testing.T) {
+func TestRedisProducer_Close(t *testing.T) {
 	mr, err := miniredis.Run()
 	assert.NoError(t, err)
 
-	out, _ := NewRedisOutput(RedisConfig{Addr: mr.Addr()})
+	out, _ := NewRedisProducer(RedisConfig{Addr: mr.Addr()})
 	mr.Close()
 
 	// Close should not panic even if Redis is gone.
@@ -115,13 +115,13 @@ func TestRedisOutput_Close(t *testing.T) {
 	})
 }
 
-func TestNewOutput_Redis(t *testing.T) {
+func TestNewProducer_Redis(t *testing.T) {
 	mr, err := miniredis.Run()
 	assert.NoError(t, err)
 	defer mr.Close()
 
-	out, err := NewOutput(Config{
-		Type:  OutputTypeRedis,
+	out, err := NewProducer(Config{
+		Type:  ProducerTypeRedis,
 		Redis: RedisConfig{Addr: mr.Addr(), Key: "events"},
 	})
 	assert.NoError(t, err)
@@ -129,17 +129,17 @@ func TestNewOutput_Redis(t *testing.T) {
 	assert.NoError(t, out.Close())
 }
 
-func TestNewOutput_RabbitMQ_ConnectionError(t *testing.T) {
-	_, err := NewOutput(Config{
-		Type:     OutputTypeRabbitMQ,
+func TestNewProducer_RabbitMQ_ConnectionError(t *testing.T) {
+	_, err := NewProducer(Config{
+		Type:     ProducerTypeRabbitMQ,
 		RabbitMQ: RabbitMQConfig{URL: "amqp://guest:guest@127.0.0.1:1/"},
 	})
 	assert.Error(t, err)
 }
 
-func TestNewOutput_Kafka(t *testing.T) {
-	out, err := NewOutput(Config{
-		Type:  OutputTypeKafka,
+func TestNewProducer_Kafka(t *testing.T) {
+	out, err := NewProducer(Config{
+		Type:  ProducerTypeKafka,
 		Kafka: KafkaConfig{Brokers: []string{"127.0.0.1:9092"}, Topic: "test"},
 	})
 	assert.NoError(t, err)

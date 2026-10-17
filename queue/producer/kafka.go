@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// KafkaConfig Kafka configuration entity, used to initialize KafkaOutput
+// KafkaConfig Kafka configuration entity, used to initialize KafkaProducer
 type KafkaConfig struct {
 	// Brokers List of Kafka brokers, e.g., ["127.0.0.1:9092"]
 	Brokers []string `json:"brokers,default=127.0.0.1:9092"`
@@ -18,23 +18,23 @@ type KafkaConfig struct {
 	Topic string `json:"topic,default=cdc-trigger-events"`
 }
 
-// KafkaOutput Kafka implementation that satisfies the IOutput interface
-type KafkaOutput struct {
+// KafkaProducer Kafka implementation that satisfies the IProducer interface
+type KafkaProducer struct {
 	// writer Kafka writer
 	writer *kafka.Writer
 	// config Kafka configuration entity
 	config KafkaConfig
 }
 
-// NewKafkaOutput Creates a KafkaOutput using the configuration entity
+// NewKafkaProducer Creates a KafkaProducer using the configuration entity
 // Parameters:
 //
 //	cfg: KafkaConfig configuration struct, contains broker list and topic name
 //
 // Returns:
 //
-//	*KafkaOutput instance
-func NewKafkaOutput(cfg KafkaConfig) (*KafkaOutput, error) {
+//	*KafkaProducer instance
+func NewKafkaProducer(cfg KafkaConfig) (*KafkaProducer, error) {
 	// Create Kafka writer
 	writer := &kafka.Writer{
 		// Kafka broker address list
@@ -60,7 +60,7 @@ func NewKafkaOutput(cfg KafkaConfig) (*KafkaOutput, error) {
 		// a whole second.
 		BatchSize: 1,
 	}
-	return &KafkaOutput{
+	return &KafkaProducer{
 		writer: writer,
 		config: cfg,
 	}, nil
@@ -74,7 +74,7 @@ func NewKafkaOutput(cfg KafkaConfig) (*KafkaOutput, error) {
 // Returns:
 //
 //	error error if sending fails, otherwise nil
-func (k *KafkaOutput) Send(ctx context.Context, event types.EventData) error {
+func (k *KafkaProducer) Send(ctx context.Context, event types.EventData) error {
 	// Serialize the event into a JSON string
 	eventValue, err := json.Marshal(event)
 	if err != nil {
@@ -95,6 +95,6 @@ func (k *KafkaOutput) Send(ctx context.Context, event types.EventData) error {
 // Returns:
 //
 //	error error if closing fails, otherwise nil
-func (k *KafkaOutput) Close() error {
+func (k *KafkaProducer) Close() error {
 	return k.writer.Close()
 }

@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -17,14 +17,14 @@ type RedisConfig struct {
 	Key      string `json:"key,default=cdc-trigger-events"`
 }
 
-type RedisOutput struct {
+type RedisProducer struct {
 	cfg RedisConfig
 	rdb *redis.Client
 	key string
 }
 
-// NewRedisOutput Creates a RedisOutput from the given configuration
-func NewRedisOutput(cfg RedisConfig) (*RedisOutput, error) {
+// NewRedisProducer Creates a RedisProducer from the given configuration
+func NewRedisProducer(cfg RedisConfig) (*RedisProducer, error) {
 	// Initialize the Redis client
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Addr,
@@ -37,7 +37,7 @@ func NewRedisOutput(cfg RedisConfig) (*RedisOutput, error) {
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		return nil, fmt.Errorf("failed to connect Redis: %w", err)
 	}
-	return &RedisOutput{
+	return &RedisProducer{
 		cfg: cfg,
 		rdb: rdb,
 		key: cfg.Key,
@@ -45,7 +45,7 @@ func NewRedisOutput(cfg RedisConfig) (*RedisOutput, error) {
 }
 
 // Send Sends the event to Redis (using List)
-func (r *RedisOutput) Send(ctx context.Context, event types.EventData) error {
+func (r *RedisProducer) Send(ctx context.Context, event types.EventData) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -58,6 +58,6 @@ func (r *RedisOutput) Send(ctx context.Context, event types.EventData) error {
 }
 
 // Close Closes the Redis client
-func (r *RedisOutput) Close() error {
+func (r *RedisProducer) Close() error {
 	return r.rdb.Close()
 }

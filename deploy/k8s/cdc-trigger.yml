@@ -2,7 +2,7 @@
 #
 # The application itself. A Deployment is right here: the process keeps no state
 # of its own, the binlog offset lives where store.* points to (a file on a volume
-# or redis) and every output is a remote service.
+# or redis) and every producer is a remote service.
 # The configuration file it reads is the copy baked into the image at
 # /app/config.yml, whose values are filled in from the environment below.
 apiVersion: apps/v1
@@ -60,51 +60,51 @@ spec:
               value: ''
             - name: STORE_REDIS_DB
               value: '0'
-            # ---- output ----
+            # ---- producer ----
             # type picks which endpoint group below is read at all, stdout is the
             # default: set it to kafka / redis / rabbitmq / rocketmq / pulsar for
             # the matching block to be used.
-            - name: OUTPUT_TYPE
+            - name: PRODUCER_TYPE
               value: stdout
-            - name: OUTPUT_KAFKA_BROKERS
+            - name: PRODUCER_KAFKA_BROKERS
               value: kafka.kube-middleware:9092
-            - name: OUTPUT_KAFKA_TOPIC
+            - name: PRODUCER_KAFKA_TOPIC
               value: cdc-trigger-events
-            - name: OUTPUT_RABBITMQ_URL
+            - name: PRODUCER_RABBITMQ_URL
               value: amqp://guest:guest@rabbitmq.kube-middleware:5672/
-            - name: OUTPUT_RABBITMQ_EXCHANGE
+            - name: PRODUCER_RABBITMQ_EXCHANGE
               value: cdc-trigger-exchange
-            - name: OUTPUT_RABBITMQ_EXCHANGE_TYPE
+            - name: PRODUCER_RABBITMQ_EXCHANGE_TYPE
               value: direct
-            - name: OUTPUT_RABBITMQ_ROUTING_KEY
+            - name: PRODUCER_RABBITMQ_ROUTING_KEY
               value: cdc-trigger-events
-            - name: OUTPUT_RABBITMQ_QUEUE
+            - name: PRODUCER_RABBITMQ_QUEUE
               value: cdc-trigger-events
-            - name: OUTPUT_REDIS_ADDR
+            - name: PRODUCER_REDIS_ADDR
               value: redis.kube-middleware:6379
-            - name: OUTPUT_REDIS_PASSWORD
+            - name: PRODUCER_REDIS_PASSWORD
               value: ''
-            - name: OUTPUT_REDIS_DB
+            - name: PRODUCER_REDIS_DB
               value: '0'
-            - name: OUTPUT_REDIS_KEY
+            - name: PRODUCER_REDIS_KEY
               value: cdc-trigger-events
-            - name: OUTPUT_ROCKETMQ_SERVERS
+            - name: PRODUCER_ROCKETMQ_SERVERS
               value: rocketmq-nameserver.kube-middleware:9876
-            - name: OUTPUT_ROCKETMQ_TOPIC
+            - name: PRODUCER_ROCKETMQ_TOPIC
               value: cdc-trigger-events
-            - name: OUTPUT_ROCKETMQ_GROUP
+            - name: PRODUCER_ROCKETMQ_GROUP
               value: cdc-trigger-group
-            - name: OUTPUT_ROCKETMQ_NAMESPACE
+            - name: PRODUCER_ROCKETMQ_NAMESPACE
               value: ''
-            - name: OUTPUT_ROCKETMQ_ACCESS_KEY
+            - name: PRODUCER_ROCKETMQ_ACCESS_KEY
               value: ''
-            - name: OUTPUT_ROCKETMQ_SECRET_KEY
+            - name: PRODUCER_ROCKETMQ_SECRET_KEY
               value: ''
-            - name: OUTPUT_PULSAR_URL
+            - name: PRODUCER_PULSAR_URL
               value: pulsar://pulsar.kube-middleware:6650
-            - name: OUTPUT_PULSAR_TOPIC
+            - name: PRODUCER_PULSAR_TOPIC
               value: cdc-trigger-events
-            - name: OUTPUT_PULSAR_TOKEN
+            - name: PRODUCER_PULSAR_TOKEN
               value: ''
           image: zhiqiangwang/app:cdc-trigger
           imagePullPolicy: Always

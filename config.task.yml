@@ -9,12 +9,12 @@
 # ${VAR:-fallback}, the same as config.yml.
 
 # ---------- Consumer Configuration ----------
-# The middleware the events are read from. It is the counterpart of the output
+# The middleware the events are read from. It is the counterpart of the producer
 # configuration: one section per middleware, of which the one named by type is used.
 consumer:
   type: "${CONSUMER_TYPE:-redis}"    # Consumer type: redis / kafka / rabbitmq / rocketmq / pulsar
 
-  # Redis settings (reads the list the Redis output writes to)
+  # Redis settings (reads the list the Redis producer writes to)
   redis:
     addr: "${CONSUMER_REDIS_ADDR:-127.0.0.1:6379}"
     password: "${CONSUMER_REDIS_PASSWORD:-}"

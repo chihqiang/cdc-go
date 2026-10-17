@@ -56,7 +56,7 @@ type MySQLSource struct {
 	canal *canal.Canal
 	// cfg Datasource configuration information
 	cfg MysqlConfig
-	// eventDataChan Event data output channel
+	// eventDataChan Event data producer channel
 	eventDataChan chan types.EventData
 	// running Indicates whether the datasource is running
 	running bool

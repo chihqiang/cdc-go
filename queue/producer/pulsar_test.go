@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -76,11 +76,11 @@ func (m *mockClient) NewTransaction(duration time.Duration) (pulsar.Transaction,
 }
 
 // ==== Tests ====
-func TestPulsarOutput_Send(t *testing.T) {
+func TestPulsarProducer_Send(t *testing.T) {
 	mp := &mockPulsarProducer{}
 	mc := &mockClient{producer: mp}
 
-	pout := &PulsarOutput{
+	pout := &PulsarProducer{
 		cfg: PulsarConfig{
 			URL:   "pulsar://127.0.0.1:6650",
 			Topic: "test-topic",
@@ -118,11 +118,11 @@ func TestPulsarOutput_Send(t *testing.T) {
 	assert.Equal(t, event.Row.Table, decoded.Row.Table)
 }
 
-func TestPulsarOutput_SendError(t *testing.T) {
+func TestPulsarProducer_SendError(t *testing.T) {
 	mp := &mockPulsarProducer{returnError: true}
 	mc := &mockClient{producer: mp}
 
-	pout := &PulsarOutput{
+	pout := &PulsarProducer{
 		cfg:      PulsarConfig{},
 		client:   mc,
 		producer: mp,
@@ -138,11 +138,11 @@ func TestPulsarOutput_SendError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestPulsarOutput_Send_InvalidJSON(t *testing.T) {
+func TestPulsarProducer_Send_InvalidJSON(t *testing.T) {
 	mp := &mockPulsarProducer{}
 	mc := &mockClient{producer: mp}
 
-	pout := &PulsarOutput{
+	pout := &PulsarProducer{
 		cfg:      PulsarConfig{},
 		client:   mc,
 		producer: mp,
@@ -165,11 +165,11 @@ func TestPulsarOutput_Send_InvalidJSON(t *testing.T) {
 	assert.Len(t, mp.sentMessages, 0)
 }
 
-func TestPulsarOutput_Close(t *testing.T) {
+func TestPulsarProducer_Close(t *testing.T) {
 	mp := &mockPulsarProducer{}
 	mc := &mockClient{producer: mp}
 
-	pout := &PulsarOutput{
+	pout := &PulsarProducer{
 		cfg:      PulsarConfig{},
 		client:   mc,
 		producer: mp,

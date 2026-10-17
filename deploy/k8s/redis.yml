@@ -1,7 +1,7 @@
 # kubectl apply -f deploy/k8s/redis.yml
 #
 # Redis serves both roles of the configuration file: store.type=redis keeps the
-# binlog offsets here, output.type=redis publishes the events here.
+# binlog offsets here, producer.type=redis publishes the events here.
 # In cluster address: redis.kube-middleware:6379
 #
 # StatefulSet because the AOF/RDB files are bound to the instance: a stable pod

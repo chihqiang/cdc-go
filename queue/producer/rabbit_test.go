@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -204,42 +204,42 @@ func TestRabbitClient_Settle_NotWaiting(t *testing.T) {
 	// Should not panic.
 }
 
-func TestRabbitMQOutput_Close(t *testing.T) {
-	r := &RabbitMQOutput{closed: false}
+func TestRabbitMQProducer_Close(t *testing.T) {
+	r := &RabbitMQProducer{closed: false}
 	err := r.Close()
 	assert.NoError(t, err)
 	assert.True(t, r.closed)
 }
 
-func TestRabbitMQOutput_Close_AlreadyClosed(t *testing.T) {
-	r := &RabbitMQOutput{closed: true}
+func TestRabbitMQProducer_Close_AlreadyClosed(t *testing.T) {
+	r := &RabbitMQProducer{closed: true}
 	err := r.Close()
 	assert.NoError(t, err)
 }
 
-func TestRabbitMQOutput_Close_WithClient(t *testing.T) {
+func TestRabbitMQProducer_Close_WithClient(t *testing.T) {
 	c := newRabbitClient(nil)
-	r := &RabbitMQOutput{client: c}
+	r := &RabbitMQProducer{client: c}
 	err := r.Close()
 	assert.NoError(t, err)
 	assert.Nil(t, r.client)
 	assert.True(t, r.closed)
 }
 
-func TestRabbitMQOutput_Send_ClosedOutput(t *testing.T) {
-	r := &RabbitMQOutput{closed: true}
+func TestRabbitMQProducer_Send_ClosedProducer(t *testing.T) {
+	r := &RabbitMQProducer{closed: true}
 	err := r.Send(context.Background(), types.EventData{})
 	assert.Error(t, err)
 }
 
-func TestRabbitMQOutput_Send_UnroutableNotRetried(t *testing.T) {
+func TestRabbitMQProducer_Send_UnroutableNotRetried(t *testing.T) {
 	// Build a client that is stopped with errUnroutable. Send should
 	// marshal, call publish, get errUnroutable back, and return it
 	// without trying to reconnect.
 	c := newRabbitClient(nil)
 	c.stop(errUnroutable)
 
-	r := &RabbitMQOutput{
+	r := &RabbitMQProducer{
 		client: c,
 		config: normalizeRabbitConfig(RabbitMQConfig{}),
 	}
@@ -249,15 +249,15 @@ func TestRabbitMQOutput_Send_UnroutableNotRetried(t *testing.T) {
 	assert.ErrorIs(t, err, errUnroutable)
 }
 
-func TestRabbitMQOutput_Current_Closed(t *testing.T) {
-	r := &RabbitMQOutput{closed: true}
+func TestRabbitMQProducer_Current_Closed(t *testing.T) {
+	r := &RabbitMQProducer{closed: true}
 	_, err := r.current()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "closed")
 }
 
-func TestRabbitMQOutput_Reconnect_Closed(t *testing.T) {
-	r := &RabbitMQOutput{closed: true}
+func TestRabbitMQProducer_Reconnect_Closed(t *testing.T) {
+	r := &RabbitMQProducer{closed: true}
 	_, err := r.reconnect(nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "closed")

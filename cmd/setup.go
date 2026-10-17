@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	"github.com/chihqiang/cdc-trigger/config"
-	"github.com/chihqiang/cdc-trigger/output"
+	"github.com/chihqiang/cdc-trigger/queue/producer"
 	"github.com/chihqiang/cdc-trigger/source"
 	"github.com/chihqiang/cdc-trigger/store"
 	"github.com/chihqiang/logx"
 )
 
-// SetupComponents components: Store, Source, Output
-func SetupComponents(cfg *config.Config) (source.ISource, store.IStore, output.IOutput, error) {
+// SetupComponents components: Store, Source, Producer
+func SetupComponents(cfg *config.Config) (source.ISource, store.IStore, producer.IProducer, error) {
 	iStore, err := store.NewStore(cfg.Store)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create store: %w", err)
@@ -25,30 +25,30 @@ func SetupComponents(cfg *config.Config) (source.ISource, store.IStore, output.I
 		return nil, nil, nil, fmt.Errorf("failed to create source: %w", err)
 	}
 	iSource.WithStore(iStore)
-	iOutput, err := output.NewOutput(cfg.Output)
+	iProducer, err := producer.NewProducer(cfg.Producer)
 	if err != nil {
 		// Both store and source were already created, so close them.
 		if cerr := iSource.Close(); cerr != nil {
-			logx.Error("failed to close source after output creation error: %v", cerr)
+			logx.Error("failed to close source after producer creation error: %v", cerr)
 		}
 		if cerr := iStore.Close(); cerr != nil {
-			logx.Error("failed to close store after output creation error: %v", cerr)
+			logx.Error("failed to close store after producer creation error: %v", cerr)
 		}
-		return nil, nil, nil, fmt.Errorf("failed to create output: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to create producer: %w", err)
 	}
-	return iSource, iStore, iOutput, nil
+	return iSource, iStore, iProducer, nil
 }
 
 // CloseSetupComponents resources uniformly
-func CloseSetupComponents(iSource source.ISource, iStore store.IStore, iOutput output.IOutput) {
-	logx.Info("closing source and output")
+func CloseSetupComponents(iSource source.ISource, iStore store.IStore, iProducer producer.IProducer) {
+	logx.Info("closing source and producer")
 	if err := iSource.Close(); err != nil {
 		logx.Error("failed to close source: %v", err)
 	}
 	if err := iStore.Close(); err != nil {
 		logx.Error("failed to close store: %v", err)
 	}
-	if err := iOutput.Close(); err != nil {
-		logx.Error("failed to close output: %v", err)
+	if err := iProducer.Close(); err != nil {
+		logx.Error("failed to close producer: %v", err)
 	}
 }

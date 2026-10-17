@@ -21,7 +21,7 @@ source:
     addr: "127.0.0.1:3306"
     user: "root"
     password: "testpass"
-output:
+producer:
   type: stdout
 `
 	err := os.WriteFile(path, []byte(content), 0644)
@@ -32,7 +32,7 @@ output:
 	assert.NotNil(t, cfg)
 	assert.Equal(t, "file", string(cfg.Store.Type))
 	assert.Equal(t, "mysql", string(cfg.Source.Type))
-	assert.Equal(t, "stdout", string(cfg.Output.Type))
+	assert.Equal(t, "stdout", string(cfg.Producer.Type))
 }
 
 func TestLoad_FileNotFound(t *testing.T) {
@@ -54,7 +54,7 @@ source:
   type: mysql
   mysql:
     password: "${TEST_CDC_PASSWORD}"
-output:
+producer:
   type: stdout
 `
 	err := os.WriteFile(path, []byte(content), 0644)
@@ -75,7 +75,7 @@ source:
   type: mysql
   mysql:
     addr: "${SOURCE_MYSQL_ADDR:-127.0.0.1:3306}"
-output:
+producer:
   type: stdout
 `
 	err := os.WriteFile(path, []byte(content), 0644)

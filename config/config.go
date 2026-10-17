@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 
-	"github.com/chihqiang/cdc-trigger/output"
+	"github.com/chihqiang/cdc-trigger/queue/producer"
 	"github.com/chihqiang/cdc-trigger/source"
 	"github.com/chihqiang/cdc-trigger/store"
 	"github.com/chihqiang/readin"
@@ -14,7 +14,7 @@ import (
 type Config struct {
 	Store  store.Config  `json:"store"`
 	Source source.Config `json:"source"`
-	Output output.Config `json:"output"`
+	Producer producer.Config `json:"producer"`
 }
 
 // Load reads the configuration file at path and fills a Config with it.

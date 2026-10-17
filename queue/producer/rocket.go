@@ -1,4 +1,4 @@
-package output
+package producer
 
 import (
 	"context"
@@ -31,12 +31,12 @@ type RocketMQConfig struct {
 	SecretKey string `json:"secret_key"`
 }
 
-// RocketMQOutput RocketMQ output implementation.
+// RocketMQProducer RocketMQ producer implementation.
 //
 // The producer is kept for the lifetime of the process and rebuilt when the
 // broker closes the connection, so a restart of RocketMQ does not leave the
-// output unable to publish ever again.
-type RocketMQOutput struct {
+// producer unable to publish ever again.
+type RocketMQProducer struct {
 	cfg     RocketMQConfig
 	options []producer.Option
 
@@ -66,14 +66,14 @@ func buildOptions(cfg RocketMQConfig) []producer.Option {
 	return options
 }
 
-// NewRocketMQOutput Creates a RocketMQOutput from the given configuration
-func NewRocketMQOutput(cfg RocketMQConfig) (*RocketMQOutput, error) {
+// NewRocketMQProducer Creates a RocketMQProducer from the given configuration
+func NewRocketMQProducer(cfg RocketMQConfig) (*RocketMQProducer, error) {
 	options := buildOptions(cfg)
 	p, err := createAndStartProducer(options)
 	if err != nil {
 		return nil, err
 	}
-	return &RocketMQOutput{
+	return &RocketMQProducer{
 		cfg:      cfg,
 		options:  options,
 		producer: p,
@@ -94,12 +94,12 @@ func createAndStartProducer(options []producer.Option) (rocketmq.Producer, error
 }
 
 // reconnect replaces a producer that is no longer usable.
-func (r *RocketMQOutput) reconnect() error {
+func (r *RocketMQProducer) reconnect() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return errors.New("the RocketMQ output is closed")
+		return errors.New("the RocketMQ producer is closed")
 	}
 
 	// Shut down the old producer before creating a new one.
@@ -118,7 +118,7 @@ func (r *RocketMQOutput) reconnect() error {
 
 // Send Serializes the EventData to a JSON string and sends it to RocketMQ.
 // If the send fails, it reconnects once and retries before returning the error.
-func (r *RocketMQOutput) Send(ctx context.Context, event types.EventData) error {
+func (r *RocketMQProducer) Send(ctx context.Context, event types.EventData) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -134,7 +134,7 @@ func (r *RocketMQOutput) Send(ctx context.Context, event types.EventData) error 
 	r.mu.Unlock()
 
 	if closed {
-		return errors.New("the RocketMQ output is closed")
+		return errors.New("the RocketMQ producer is closed")
 	}
 	if producer == nil {
 		if err := r.reconnect(); err != nil {
@@ -169,7 +169,7 @@ func (r *RocketMQOutput) Send(ctx context.Context, event types.EventData) error 
 }
 
 // Close Closes the RocketMQ producer
-func (r *RocketMQOutput) Close() error {
+func (r *RocketMQProducer) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

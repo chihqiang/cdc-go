@@ -80,7 +80,7 @@ func (f *fakeKafkaReader) committedOffsets() []int64 {
 	return append([]int64(nil), f.committed...)
 }
 
-// kafkaMessage is one message as the output would have written it.
+// kafkaMessage is one message as the producer would have written it.
 func kafkaMessage(t *testing.T, offset int64, payload []byte) kafka.Message {
 	t.Helper()
 	return kafka.Message{
