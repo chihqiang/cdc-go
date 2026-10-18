@@ -1,13 +1,6 @@
 <div align="center">
 <h1>cdc-go</h1>
 
-[![Auth](https://img.shields.io/badge/Auth-chihqiang-ff69b4)](https://github.com/chihqiang)
-[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/chihqiang/cdc-go)](https://github.com/chihqiang/cdc-go/pulls)
-[![Release](https://img.shields.io/github/release/chihqiang/cdc-go.svg?style=flat-square)](https://github.com/chihqiang/cdc-go/releases)
-[![GitHub Pull Requests](https://img.shields.io/github/stars/chihqiang/cdc-go)](https://github.com/chihqiang/cdc-go/stargazers)
-[![HitCount](https://views.whatilearened.today/views/github/chihqiang/cdc-go.svg)](https://github.com/chihqiang/cdc-go)
-[![GitHub license](https://img.shields.io/github/license/chihqiang/cdc-go)](https://github.com/chihqiang/cdc-go/blob/main/LICENSE)
-
 <p>
  cdc-go is an efficient Go-based Change Data Capture (CDC) tool that real-time monitors database changes, parses and processes events, and sends them to message queues or other downstream systems.
 </p>
