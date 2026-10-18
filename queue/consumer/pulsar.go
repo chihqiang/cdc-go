@@ -14,11 +14,11 @@ import (
 // PulsarConfig Pulsar configuration entity
 type PulsarConfig struct {
 	URL   string `json:"url,default=pulsar://127.0.0.1:6650"`
-	Topic string `json:"topic,default=cdc-trigger-events"`
+	Topic string `json:"topic,default=cdc-go-events"`
 	// Subscription is the name of the subscription the consumer attaches to. It
 	// is what remembers how far the topic was consumed, so a restart with the
 	// same name picks up where the previous run stopped.
-	Subscription string `json:"subscription,default=cdc-trigger-subscription"`
+	Subscription string `json:"subscription,default=cdc-go-subscription"`
 	// SubscriptionType - exclusive / shared / failover / key_shared. "shared"
 	// lets several processes share the events between them.
 	SubscriptionType string `json:"subscription_type,default=shared"`

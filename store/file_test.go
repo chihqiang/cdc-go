@@ -95,7 +95,7 @@ func TestFileStore_Close(t *testing.T) {
 func TestFileStore_FilePath(t *testing.T) {
 	fs := &FileStore{dir: "/tmp"}
 	path := fs.filePath("testkey")
-	assert.True(t, strings.HasPrefix(path, "/tmp/cdc-trigger-"))
+	assert.True(t, strings.HasPrefix(path, "/tmp/cdc-go-"))
 	// The key is hashed, not used directly.
 	assert.NotContains(t, path, "testkey")
 }

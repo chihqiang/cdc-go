@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/chihqiang/cdc-trigger/store"
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/store"
+	"github.com/chihqiang/cdc-go/types"
 )
 
 const (
 	// StoreKeyPosition binlog 位点存储 key
+	//
+	// 保留改名前的值，已有部署重启后才能继续从上次位点恢复，而不是从头重放。
 	StoreKeyPosition = "_cdc_trigger_position"
 )
 

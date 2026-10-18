@@ -1,20 +1,20 @@
-# cdc-trigger-task
+# cdc-go-task
 
-`cdc-trigger-task` consumes CDC events published by `cdc-trigger` and routes
+`cdc-go-task` consumes CDC events published by `cdc-go` and routes
 each event to the configured tasks that watch its database table. It can also
 run those tasks directly for a primary-key value or a time range.
 
 The two commands have different jobs:
 
 ```text
-MySQL binlog -> cdc-trigger -> middleware (Kafka, Redis, ...)
-                                  |
-                                  v
-                         cdc-trigger-task -> configured tasks
+MySQL binlog -> cdc-go -> middleware (Kafka, Redis, ...)
+                          |
+                          v
+                          cdc-go-task -> configured tasks
 ```
 
-`cdc-trigger` reads the source database and publishes events according to
-[`config.yml`](../../config.yml). `cdc-trigger-task` reads those events and
+`cdc-go` reads the source database and publishes events according to
+[`config.yml`](../../config.yml). `cdc-go-task` reads those events and
 routes them according to [`config.task.yml`](../../config.task.yml). Both
 configurations must point at the same middleware destination (for example, the
 same Kafka brokers and topic).
@@ -27,17 +27,17 @@ From the repository root:
 make build-task
 ```
 
-This builds `./cdc-trigger-task`. To build both binaries, use `make build-all`.
+This builds `./cdc-go-task`. To build both binaries, use `make build-all`.
 You can also run the task command directly from source:
 
 ```bash
-go run ./cmd/cdc-trigger-task --help
+go run ./cmd/cdc-go-task --help
 ```
 
 ## Commands
 
 ```text
-cdc-trigger-task [--task-config FILE] [command] [command options]
+cdc-go-task [--task-config FILE] [command] [command options]
 ```
 
 The task configuration defaults to `config.task.yml`. Use `-c` or
@@ -45,14 +45,14 @@ The task configuration defaults to `config.task.yml`. Use `-c` or
 subcommand:
 
 ```bash
-./cdc-trigger-task -c config.task.yml run
-./cdc-trigger-task run -c config.task.yml
+./cdc-go-task -c config.task.yml run
+./cdc-go-task run -c config.task.yml
 ```
 
 When no subcommand is supplied, the command defaults to `run`:
 
 ```bash
-./cdc-trigger-task -c config.task.yml
+./cdc-go-task -c config.task.yml
 ```
 
 ### `run`
@@ -61,7 +61,7 @@ Continuously consumes events from the middleware and routes them to tasks
 watching each event's `database.table`:
 
 ```bash
-./cdc-trigger-task -c config.task.yml run
+./cdc-go-task -c config.task.yml run
 ```
 
 For Kafka, the producer and consumer must use the same broker and topic. For
@@ -75,7 +75,7 @@ producer:
   kafka:
     brokers:
       - 127.0.0.1:9092
-    topic: cdc-trigger-events
+    topic: cdc-go-events
 ```
 
 ```yaml
@@ -85,8 +85,8 @@ consumer:
   kafka:
     brokers:
       - 127.0.0.1:9092
-    topic: cdc-trigger-events
-    group: cdc-trigger-consumer-group
+    topic: cdc-go-events
+    group: cdc-go-consumer-group
     start_offset: first
 ```
 
@@ -101,7 +101,7 @@ Environment references in either configuration use `${VAR}` or
 Runs watching tasks for one main-table row:
 
 ```bash
-./cdc-trigger-task -c config.task.yml run-by-pk app.user 42
+./cdc-go-task -c config.task.yml run-by-pk app.user 42
 ```
 
 The table must be written as `database.table`. For a main table, the value is
@@ -113,7 +113,7 @@ its `primary_key`. For a sub table, the value is the owning main row's
 Runs watching tasks for rows in the half-open interval `[start, end)`:
 
 ```bash
-./cdc-trigger-task -c config.task.yml run-by-range app.user \
+./cdc-go-task -c config.task.yml run-by-range app.user \
   "2026-10-17 00:00:00" "2026-10-18 00:00:00"
 ```
 

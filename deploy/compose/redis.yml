@@ -3,18 +3,18 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: cdc-trigger-mysql
+    container_name: cdc-go-mysql
     restart: always
     ports:
       - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: 123456
-      MYSQL_DATABASE: cdctrigger
+      MYSQL_DATABASE: cdcgo
       TZ: Asia/Shanghai
     volumes:
-      - ./:/cdc-trigger
+      - ./:/cdc-go
     networks:
-      - cdc-trigger-network
+      - cdc-go-network
     healthcheck:
       test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p123456" ]
       interval: 5s
@@ -23,14 +23,14 @@ services:
 
   redis:
     image: redis:5
-    container_name: cdc-trigger-redis
+    container_name: cdc-go-redis
     restart: always
     ports:
       - "6379:6379"
     environment:
       TZ: Asia/Shanghai
     networks:
-      - cdc-trigger-network
+      - cdc-go-network
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 3s
@@ -38,5 +38,5 @@ services:
       retries: 3
 
 networks:
-  cdc-trigger-network:
+  cdc-go-network:
     driver: bridge

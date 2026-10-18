@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 
-	"github.com/chihqiang/cdc-trigger/config"
+	"github.com/chihqiang/cdc-go/config"
 	"github.com/chihqiang/cli"
 )
 

@@ -17,7 +17,7 @@ type RabbitMQConfig struct {
 	URL string `json:"url,default=amqp://guest:guest@127.0.0.1:5672/"`
 	// Exchange is the exchange the events were published to. An empty name means
 	// the default exchange, which routes a message to the queue of the same name.
-	Exchange string `json:"exchange,default=cdc-trigger-exchange"`
+	Exchange string `json:"exchange,default=cdc-go-exchange"`
 	// ExchangeType is the kind of exchange to declare: direct, fanout or topic.
 	// It is ignored when Exchange is empty.
 	ExchangeType string `json:"exchange_type,default=direct"`
@@ -25,7 +25,7 @@ type RabbitMQConfig struct {
 	// name, which is what a direct exchange needs to deliver the messages the
 	// producer published with that key.
 	RoutingKey string `json:"routing_key"`
-	Queue      string `json:"queue,default=cdc-trigger-events"`
+	Queue      string `json:"queue,default=cdc-go-events"`
 	Durable    bool   `json:"durable,default=true"`
 	AutoDelete bool   `json:"auto_delete"`
 	Exclusive  bool   `json:"exclusive"`

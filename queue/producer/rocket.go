@@ -10,7 +10,7 @@ import (
 	"github.com/apache/rocketmq-client-go/v2"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 	"github.com/apache/rocketmq-client-go/v2/producer"
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 )
 
 // RocketMQConfig RocketMQ configuration entity
@@ -18,7 +18,7 @@ type RocketMQConfig struct {
 	// Servers - RocketMQ NameServer address list, e.g., ["127.0.0.1:9876"]
 	Servers []string `json:"servers,default=127.0.0.1:9876"`
 	// Topic - The topic name to send the message
-	Topic string `json:"topic,default=cdc-trigger-events"`
+	Topic string `json:"topic,default=cdc-go-events"`
 	// Group - The producer group name
 	Group string `json:"group"`
 	// Retry - The number of retries if sending a message fails

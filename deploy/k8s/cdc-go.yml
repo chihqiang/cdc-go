@@ -1,4 +1,4 @@
-# kubectl apply -f deploy/k8s/cdc-trigger.yml
+# kubectl apply -f deploy/k8s/cdc-go.yml
 #
 # The application itself. A Deployment is right here: the process keeps no state
 # of its own, the binlog offset lives where store.* points to (a file on a volume
@@ -9,8 +9,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: cdc-trigger
-  name: cdc-trigger
+    app: cdc-go
+  name: cdc-go
   namespace: kube-middleware
 spec:
   progressDeadlineSeconds: 600
@@ -18,11 +18,11 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: cdc-trigger
+      app: cdc-go
   template:
     metadata:
       labels:
-        app: cdc-trigger
+        app: cdc-go
     spec:
       containers:
         - env:
@@ -69,17 +69,17 @@ spec:
             - name: PRODUCER_KAFKA_BROKERS
               value: kafka.kube-middleware:9092
             - name: PRODUCER_KAFKA_TOPIC
-              value: cdc-trigger-events
+              value: cdc-go-events
             - name: PRODUCER_RABBITMQ_URL
               value: amqp://guest:guest@rabbitmq.kube-middleware:5672/
             - name: PRODUCER_RABBITMQ_EXCHANGE
-              value: cdc-trigger-exchange
+              value: cdc-go-exchange
             - name: PRODUCER_RABBITMQ_EXCHANGE_TYPE
               value: direct
             - name: PRODUCER_RABBITMQ_ROUTING_KEY
-              value: cdc-trigger-events
+              value: cdc-go-events
             - name: PRODUCER_RABBITMQ_QUEUE
-              value: cdc-trigger-events
+              value: cdc-go-events
             - name: PRODUCER_REDIS_ADDR
               value: redis.kube-middleware:6379
             - name: PRODUCER_REDIS_PASSWORD
@@ -87,13 +87,13 @@ spec:
             - name: PRODUCER_REDIS_DB
               value: '0'
             - name: PRODUCER_REDIS_KEY
-              value: cdc-trigger-events
+              value: cdc-go-events
             - name: PRODUCER_ROCKETMQ_SERVERS
               value: rocketmq-nameserver.kube-middleware:9876
             - name: PRODUCER_ROCKETMQ_TOPIC
-              value: cdc-trigger-events
+              value: cdc-go-events
             - name: PRODUCER_ROCKETMQ_GROUP
-              value: cdc-trigger-group
+              value: cdc-go-group
             - name: PRODUCER_ROCKETMQ_NAMESPACE
               value: ''
             - name: PRODUCER_ROCKETMQ_ACCESS_KEY
@@ -103,12 +103,12 @@ spec:
             - name: PRODUCER_PULSAR_URL
               value: pulsar://pulsar.kube-middleware:6650
             - name: PRODUCER_PULSAR_TOPIC
-              value: cdc-trigger-events
+              value: cdc-go-events
             - name: PRODUCER_PULSAR_TOKEN
               value: ''
-          image: zhiqiangwang/app:cdc-trigger
+          image: zhiqiangwang/app:cdc-go
           imagePullPolicy: Always
-          name: cdc-trigger
+          name: cdc-go
           resources:
             limits:
               cpu: '1'

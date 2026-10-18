@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/assert"
 )
@@ -120,7 +120,7 @@ func TestNewKafkaConsumer_BuildsAReader(t *testing.T) {
 	c, err := NewKafkaConsumer(KafkaConfig{
 		Brokers:     []string{"127.0.0.1:9092"},
 		Topic:       "events",
-		Group:       "cdc-trigger",
+		Group:       "cdc-go",
 		StartOffset: "last",
 	})
 	assert.NoError(t, err)
@@ -150,7 +150,7 @@ func TestKafkaStartOffset(t *testing.T) {
 // ---- Consume tests ----
 
 func TestKafkaConsumer_Consume_NilHandler(t *testing.T) {
-	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-trigger"}, newFakeKafkaReader())
+	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-go"}, newFakeKafkaReader())
 
 	assert.ErrorIs(t, c.Consume(context.Background(), nil), errNilHandler)
 }
@@ -160,7 +160,7 @@ func TestKafkaConsumer_Consume_CommitsWhatTheHandlerAccepted(t *testing.T) {
 		kafkaMessage(t, 1, pushedPayload(t, "first")),
 		kafkaMessage(t, 2, pushedPayload(t, "second")),
 	)
-	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-trigger"}, reader)
+	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-go"}, reader)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -201,7 +201,7 @@ func TestKafkaConsumer_Consume_LeavesARejectedOffsetUncommitted(t *testing.T) {
 		kafkaMessage(t, 1, pushedPayload(t, "failing")),
 		kafkaMessage(t, 2, pushedPayload(t, "working")),
 	)
-	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-trigger"}, reader)
+	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-go"}, reader)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -245,7 +245,7 @@ func TestKafkaConsumer_Consume_DropsAndCommitsUndecodablePayloads(t *testing.T) 
 		kafkaMessage(t, 1, []byte("{not an event")),
 		kafkaMessage(t, 2, pushedPayload(t, "users")),
 	)
-	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-trigger"}, reader)
+	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-go"}, reader)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -303,7 +303,7 @@ func TestKafkaConsumer_Consume_WithoutAGroupCommitsNothing(t *testing.T) {
 func TestKafkaConsumer_Consume_ReportsReadErrors(t *testing.T) {
 	reader := newFakeKafkaReader()
 	reader.readErr = errors.New("the broker is unreachable")
-	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-trigger"}, reader)
+	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-go"}, reader)
 
 	err := c.Consume(context.Background(), func(context.Context, types.EventData) error { return nil })
 	assert.Error(t, err)
@@ -313,14 +313,14 @@ func TestKafkaConsumer_Consume_ReportsReadErrors(t *testing.T) {
 func TestKafkaConsumer_Consume_EOFEndsTheConsumption(t *testing.T) {
 	reader := newFakeKafkaReader()
 	reader.readErr = io.EOF
-	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-trigger"}, reader)
+	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-go"}, reader)
 
 	assert.NoError(t, c.Consume(context.Background(), func(context.Context, types.EventData) error { return nil }))
 }
 
 func TestKafkaConsumer_Consume_ReturnsNilWhenClosed(t *testing.T) {
 	reader := newFakeKafkaReader()
-	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-trigger"}, reader)
+	c := newFakeConsumer(t, KafkaConfig{Group: "cdc-go"}, reader)
 
 	consumed := make(chan error, 1)
 	go func() {

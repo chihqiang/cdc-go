@@ -28,6 +28,6 @@ go.work.sum
 /.idea/
 # .vscode/
 /*.pos
-/cdc-trigger
-/cdc-trigger-task
+/cdc-go
+/cdc-go-task
 /runtime/

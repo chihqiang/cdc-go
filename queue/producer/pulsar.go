@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 )
 
 type PulsarConfig struct {
 	URL               string `json:"url,default=pulsar://127.0.0.1:6650"`
-	Topic             string `json:"topic,default=cdc-trigger-events"`
+	Topic             string `json:"topic,default=cdc-go-events"`
 	Token             string `json:"token"`
 	OperationTimeout  int    `json:"operation_timeout,default=30"`
 	ConnectionTimeout int    `json:"connection_timeout,default=30"`

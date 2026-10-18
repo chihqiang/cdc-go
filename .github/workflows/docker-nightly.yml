@@ -31,6 +31,6 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            zhiqiangwang/app:cdc-trigger
+            zhiqiangwang/app:cdc-go
           build-args: |
-            CDC_TRIGGER_VERSION=${{ github.sha }}
+            APP_VERSION=${{ github.sha }}

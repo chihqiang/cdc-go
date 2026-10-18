@@ -17,7 +17,7 @@ type KafkaConfig struct {
 	Brokers []string `json:"brokers,default=127.0.0.1:9092"`
 
 	// Topic The name of the Kafka topic the events are read from
-	Topic string `json:"topic,default=cdc-trigger-events"`
+	Topic string `json:"topic,default=cdc-go-events"`
 
 	// Group The consumer group the offsets are committed under. Without it
 	// nothing is committed, so every run starts again at StartOffset.

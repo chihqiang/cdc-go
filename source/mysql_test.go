@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"

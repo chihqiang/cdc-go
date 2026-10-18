@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -14,7 +14,7 @@ type RedisConfig struct {
 	Addr     string `json:"addr,default=127.0.0.1:6379"`
 	Password string `json:"password"`
 	DB       int    `json:"db"`
-	Key      string `json:"key,default=cdc-trigger-events"`
+	Key      string `json:"key,default=cdc-go-events"`
 }
 
 type RedisProducer struct {

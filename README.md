@@ -1,15 +1,15 @@
 <div align="center">
-<h1>cdc-trigger</h1>
+<h1>cdc-go</h1>
 
 [![Auth](https://img.shields.io/badge/Auth-chihqiang-ff69b4)](https://github.com/chihqiang)
-[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/chihqiang/cdc-trigger)](https://github.com/chihqiang/cdc-trigger/pulls)
-[![Release](https://img.shields.io/github/release/chihqiang/cdc-trigger.svg?style=flat-square)](https://github.com/chihqiang/cdc-trigger/releases)
-[![GitHub Pull Requests](https://img.shields.io/github/stars/chihqiang/cdc-trigger)](https://github.com/chihqiang/cdc-trigger/stargazers)
-[![HitCount](https://views.whatilearened.today/views/github/chihqiang/cdc-trigger.svg)](https://github.com/chihqiang/cdc-trigger)
-[![GitHub license](https://img.shields.io/github/license/chihqiang/cdc-trigger)](https://github.com/chihqiang/cdc-trigger/blob/main/LICENSE)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/chihqiang/cdc-go)](https://github.com/chihqiang/cdc-go/pulls)
+[![Release](https://img.shields.io/github/release/chihqiang/cdc-go.svg?style=flat-square)](https://github.com/chihqiang/cdc-go/releases)
+[![GitHub Pull Requests](https://img.shields.io/github/stars/chihqiang/cdc-go)](https://github.com/chihqiang/cdc-go/stargazers)
+[![HitCount](https://views.whatilearened.today/views/github/chihqiang/cdc-go.svg)](https://github.com/chihqiang/cdc-go)
+[![GitHub license](https://img.shields.io/github/license/chihqiang/cdc-go)](https://github.com/chihqiang/cdc-go/blob/main/LICENSE)
 
 <p>
- cdc-trigger is an efficient Go-based Change Data Capture (CDC) tool that real-time monitors database changes, parses and processes events, and sends them to message queues or other downstream systems.
+ cdc-go is an efficient Go-based Change Data Capture (CDC) tool that real-time monitors database changes, parses and processes events, and sends them to message queues or other downstream systems.
 </p>
 
 </div>
@@ -65,10 +65,10 @@
 
 ### Option 1: Install via `go install` (Recommended)
 
-This is the simplest and recommended way to install **cdc-trigger**:
+This is the simplest and recommended way to install **cdc-go**:
 
 ```bash
-go install github.com/chihqiang/cdc-trigger/cmd/cdc-trigger@latest
+go install github.com/chihqiang/cdc-go/cmd/cdc-go@latest
 ```
 
 ### Option 2: Build from Source
@@ -77,9 +77,9 @@ If you want to modify the source code or contribute to development, build from s
 
 ```bash
 # Clone the repository
-git clone https://github.com/chihqiang/cdc-trigger.git
-cd cdc-trigger && make build
-cp ./cdc-trigger /usr/local/bin/
+git clone https://github.com/chihqiang/cdc-go.git
+cd cdc-go && make build
+cp ./cdc-go /usr/local/bin/
 ```
 
 ### Usage Example
@@ -90,11 +90,11 @@ cp ./cdc-trigger /usr/local/bin/
 
 ```bash
 # Using the default config.yml
-cdc-trigger
+cdc-go
 # Using a specific config file
-cdc-trigger -c path/to/config.yml
+cdc-go -c path/to/config.yml
 # Explicitly using the listen command
-cdc-trigger listen -c path/to/config.yml
+cdc-go listen -c path/to/config.yml
 ```
 
 > The configuration file is required: the file is the only source of configuration, and starting
@@ -110,7 +110,7 @@ The configuration file uses YAML format and consists of three main parts: `store
 
 ```yaml
 # ==========================================
-# cdc-trigger Configuration File Example (YAML)
+# cdc-go Configuration File Example (YAML)
 # ==========================================
 # The full annotated file is available at ./config.yml in the repository root.
 
@@ -140,7 +140,7 @@ source:
       - "performance_schema.*"
       - "sys.*"
     include_table_regex:              # Tables to include (regex patterns, empty = all except excluded)
-      # - "cdctrigger.*"              # Example: only listen to cdctrigger tables
+      # - "cdcgo.*"              # Example: only listen to cdcgo tables
 
 # ---------- Producer Configuration ----------
 producer:
@@ -150,15 +150,15 @@ producer:
   kafka:
     brokers:
       - "${PRODUCER_KAFKA_BROKERS:-127.0.0.1:9092}"  # Kafka broker list
-    topic: "${PRODUCER_KAFKA_TOPIC:-cdc-trigger-events}"  # Kafka topic name
+    topic: "${PRODUCER_KAFKA_TOPIC:-cdc-go-events}"  # Kafka topic name
 
   # RabbitMQ settings
   rabbitmq:
     url: "${PRODUCER_RABBITMQ_URL:-amqp://guest:guest@127.0.0.1:5672/}" # RabbitMQ connection URL
-    exchange: "${PRODUCER_RABBITMQ_EXCHANGE:-cdc-trigger-exchange}" # Exchange name (declared and bound on startup)
+    exchange: "${PRODUCER_RABBITMQ_EXCHANGE:-cdc-go-exchange}" # Exchange name (declared and bound on startup)
     exchange_type: "${PRODUCER_RABBITMQ_EXCHANGE_TYPE:-direct}"     # Exchange type: direct / fanout / topic (headers is refused)
-    routing_key: "${PRODUCER_RABBITMQ_ROUTING_KEY:-cdc-trigger-events}" # Publish key, and the key the queue is bound with
-    queue: "${PRODUCER_RABBITMQ_QUEUE:-cdc-trigger-events}"      # Queue name
+    routing_key: "${PRODUCER_RABBITMQ_ROUTING_KEY:-cdc-go-events}" # Publish key, and the key the queue is bound with
+    queue: "${PRODUCER_RABBITMQ_QUEUE:-cdc-go-events}"      # Queue name
     durable: true              # Whether the queue should survive server restarts (also makes messages persistent)
     auto_delete: false         # Whether the queue should auto-delete when unused
     auto_ack: false            # Whether to auto-acknowledge messages (unused when publishing)
@@ -170,14 +170,14 @@ producer:
     addr: "${PRODUCER_REDIS_ADDR:-127.0.0.1:6379}"        # Redis address
     password: "${PRODUCER_REDIS_PASSWORD:-}"              # Redis password
     db: "${PRODUCER_REDIS_DB:-0}"                         # Redis database number
-    key: "${PRODUCER_REDIS_KEY:-cdc-trigger-events}"      # Redis key for storing events
+    key: "${PRODUCER_REDIS_KEY:-cdc-go-events}"      # Redis key for storing events
 
   # RocketMQ settings
   rocketmq:
     servers:
       - "${PRODUCER_ROCKETMQ_SERVERS:-127.0.0.1:9876}"  # RocketMQ NameServer address
-    topic: "${PRODUCER_ROCKETMQ_TOPIC:-cdc-trigger-events}"  # RocketMQ topic name
-    group: "${PRODUCER_ROCKETMQ_GROUP:-cdc-trigger-group}"   # Producer group name
+    topic: "${PRODUCER_ROCKETMQ_TOPIC:-cdc-go-events}"  # RocketMQ topic name
+    group: "${PRODUCER_ROCKETMQ_GROUP:-cdc-go-group}"   # Producer group name
     namespace: "${PRODUCER_ROCKETMQ_NAMESPACE:-}"        # Namespace
     access_key: "${PRODUCER_ROCKETMQ_ACCESS_KEY:-}"      # Access key
     secret_key: "${PRODUCER_ROCKETMQ_SECRET_KEY:-}"      # Secret key
@@ -186,7 +186,7 @@ producer:
   # Pulsar settings
   pulsar:
     url: "${PRODUCER_PULSAR_URL:-pulsar://127.0.0.1:6650}"  # Pulsar broker URL
-    topic: "${PRODUCER_PULSAR_TOPIC:-cdc-trigger-events}"   # Pulsar topic name
+    topic: "${PRODUCER_PULSAR_TOPIC:-cdc-go-events}"   # Pulsar topic name
     token: "${PRODUCER_PULSAR_TOKEN:-}"        # Optional authentication token
     operation_timeout: 30           # Operation timeout in seconds
     connection_timeout: 30          # Connection timeout in seconds
@@ -207,7 +207,7 @@ source:
 ```
 
 ```bash
-SOURCE_MYSQL_ADDR=mysql:3306 SOURCE_MYSQL_PASSWORD=secret ./cdc-trigger -c config.yml
+SOURCE_MYSQL_ADDR=mysql:3306 SOURCE_MYSQL_PASSWORD=secret ./cdc-go -c config.yml
 ```
 
 | Syntax | Meaning |
@@ -226,10 +226,10 @@ path in the error.
 
 ## Docker Deployment
 
-You can use Docker to run cdc-trigger in containerized environments. Here's how to build and run cdc-trigger with Docker:
+You can use Docker to run cdc-go in containerized environments. Here's how to build and run cdc-go with Docker:
 
 The image ships `/app/config.yml` (the file from the repository root) and is started with
-`cdc-trigger -c /app/config.yml`. Every `-e` below fills a `${VAR:-fallback}` reference in that file,
+`cdc-go -c /app/config.yml`. Every `-e` below fills a `${VAR:-fallback}` reference in that file,
 so the same image can be pointed at another database, storage or producer without a rebuild:
 
 ```bash
@@ -237,17 +237,17 @@ so the same image can be pointed at another database, storage or producer withou
 # 1️⃣ MySQL only (read from MySQL)
 # =========================
 docker run -it --rm \
-    --name cdc-trigger \
+    --name cdc-go \
     -e SOURCE_MYSQL_ADDR="127.0.0.1:3306" \
     -e SOURCE_MYSQL_USER="root" \
     -e SOURCE_MYSQL_PASSWORD="123456" \
-    zhiqiangwang/app:cdc-trigger
+    zhiqiangwang/app:cdc-go
 
 # =========================
 # 2️⃣ MySQL → Redis & Redis
 # =========================
 docker run -it --rm \
-    --name cdc-trigger \
+    --name cdc-go \
     -e SOURCE_MYSQL_ADDR="127.0.0.1:3306" \
     -e SOURCE_MYSQL_USER="root" \
     -e SOURCE_MYSQL_PASSWORD="123456" \
@@ -259,17 +259,17 @@ docker run -it --rm \
     -e PRODUCER_REDIS_ADDR="127.0.0.1:6379" \
     -e PRODUCER_REDIS_PASSWORD="123456" \
     -e PRODUCER_REDIS_DB="1" \
-    -e PRODUCER_REDIS_KEY="cdc-trigger-events" \
-    zhiqiangwang/app:cdc-trigger
+    -e PRODUCER_REDIS_KEY="cdc-go-events" \
+    zhiqiangwang/app:cdc-go
 ```
 
 To use your own configuration file instead, mount it over the bundled one:
 
 ```bash
 docker run -it --rm \
-    --name cdc-trigger \
+    --name cdc-go \
     -v "$PWD/config.yml:/app/config.yml:ro" \
-    zhiqiangwang/app:cdc-trigger
+    zhiqiangwang/app:cdc-go
 ```
 
 The environment variables the bundled `config.yml` reads are `STORE_TYPE`, `STORE_FILE_DIR`,
@@ -292,13 +292,13 @@ The environment variables the bundled `config.yml` reads are `STORE_TYPE`, `STOR
 
 ```sql
 -- Create an account
-CREATE USER 'cdctrigger'@'%' IDENTIFIED BY 'strong_password';
+CREATE USER 'cdcgo'@'%' IDENTIFIED BY 'strong_password';
 
 -- Authorization (the REPLICATION permission is required to read the binlog)
-GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'cdctrigger'@'%';
+GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'cdcgo'@'%';
 
--- If cdc-trigger needs to do metadata queries, it also needs read permissions
-GRANT SELECT ON *.* TO 'cdctrigger'@'%';
+-- If cdc-go needs to do metadata queries, it also needs read permissions
+GRANT SELECT ON *.* TO 'cdcgo'@'%';
 
 -- Refresh permissions
 FLUSH PRIVILEGES;

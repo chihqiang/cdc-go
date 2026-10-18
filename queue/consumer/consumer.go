@@ -13,7 +13,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/chihqiang/logx"
 )
 

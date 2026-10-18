@@ -1,7 +1,7 @@
 # kubectl apply -k deploy/k8s/
 #
 # Single entry point: the namespace, the middleware StatefulSets and the
-# cdc-trigger Deployment. kubectl applies the Namespace kind first and the
+# cdc-go Deployment. kubectl applies the Namespace kind first and the
 # kustomization keeps the middleware ahead of the application, so a cold
 # cluster can be brought up with one command.
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -14,4 +14,4 @@ resources:
   - rabbitmq.yml
   - rocketmq.yml
   - pulsar.yml
-  - cdc-trigger.yml
+  - cdc-go.yml
