@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/assert"
 )

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/rabbitmq/amqp091-go"
 )
 
@@ -24,7 +24,7 @@ type RabbitMQConfig struct {
 	URL string `json:"url,default=amqp://guest:guest@127.0.0.1:5672/"`
 	// Exchange is the exchange the events are published to. An empty name means
 	// the default exchange, which routes a message to the queue of the same name.
-	Exchange string `json:"exchange,default=cdc-trigger-exchange"`
+	Exchange string `json:"exchange,default=cdc-go-exchange"`
 	// ExchangeType is the kind of exchange to declare: direct, fanout or topic.
 	// It is ignored when Exchange is empty.
 	ExchangeType string `json:"exchange_type,default=direct"`
@@ -32,7 +32,7 @@ type RabbitMQConfig struct {
 	// with. It defaults to the queue name, which is what a direct exchange needs
 	// to deliver the message to that queue.
 	RoutingKey string `json:"routing_key"`
-	Queue      string `json:"queue,default=cdc-trigger-events"`
+	Queue      string `json:"queue,default=cdc-go-events"`
 	Durable    bool   `json:"durable,default=true"`
 	AutoDelete bool   `json:"auto_delete"`
 	AutoAck    bool   `json:"auto_ack"`

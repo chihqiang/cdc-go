@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -15,7 +15,7 @@ type KafkaConfig struct {
 	Brokers []string `json:"brokers,default=127.0.0.1:9092"`
 
 	// Topic The name of the Kafka topic to send messages to
-	Topic string `json:"topic,default=cdc-trigger-events"`
+	Topic string `json:"topic,default=cdc-go-events"`
 }
 
 // KafkaProducer Kafka implementation that satisfies the IProducer interface

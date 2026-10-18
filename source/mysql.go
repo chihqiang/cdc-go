@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/store"
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/store"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/chihqiang/logx"
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"

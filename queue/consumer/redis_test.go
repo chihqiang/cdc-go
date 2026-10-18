@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 )
@@ -69,7 +69,7 @@ func TestNewRedisConsumer_KeyDefaultsToTheProducerKey(t *testing.T) {
 
 	// The same default as the Redis producer, so that both sides are connected
 	// without either of them naming the key.
-	assert.Equal(t, "cdc-trigger-events", c.cfg.Key)
+	assert.Equal(t, "cdc-go-events", c.cfg.Key)
 }
 
 func TestNewRedisConsumer_ConnectionError(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,7 +16,7 @@ import (
 type mockMessage struct{ payload []byte }
 
 func (m *mockMessage) Topic() string                                   { return "events" }
-func (m *mockMessage) ProducerName() string                            { return "cdc-trigger" }
+func (m *mockMessage) ProducerName() string                            { return "cdc-go" }
 func (m *mockMessage) Properties() map[string]string                   { return nil }
 func (m *mockMessage) Payload() []byte                                 { return m.payload }
 func (m *mockMessage) ID() pulsar.MessageID                            { return nil }
@@ -115,7 +115,7 @@ func (m *mockConsumer) isClosed() bool {
 	return m.closed
 }
 
-func (m *mockConsumer) Subscription() string { return "cdc-trigger-subscription" }
+func (m *mockConsumer) Subscription() string { return "cdc-go-subscription" }
 
 func (m *mockConsumer) Unsubscribe() error      { return nil }
 func (m *mockConsumer) UnsubscribeForce() error { return nil }
@@ -188,7 +188,7 @@ func defaultPulsarConfig() PulsarConfig {
 	return PulsarConfig{
 		URL:          "pulsar://127.0.0.1:6650",
 		Topic:        "events",
-		Subscription: "cdc-trigger-subscription",
+		Subscription: "cdc-go-subscription",
 	}
 }
 
@@ -230,7 +230,7 @@ func TestInitialPosition(t *testing.T) {
 func TestConsumerOptions_BuildsTheSubscription(t *testing.T) {
 	options, err := consumerOptions(PulsarConfig{
 		Topic:                       "events",
-		Subscription:                "cdc-trigger-subscription",
+		Subscription:                "cdc-go-subscription",
 		SubscriptionType:            "failover",
 		SubscriptionInitialPosition: "latest",
 		NackRedeliveryDelay:         5,
@@ -238,7 +238,7 @@ func TestConsumerOptions_BuildsTheSubscription(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, "events", options.Topic)
-	assert.Equal(t, "cdc-trigger-subscription", options.SubscriptionName)
+	assert.Equal(t, "cdc-go-subscription", options.SubscriptionName)
 	assert.Equal(t, pulsar.Failover, options.Type)
 	assert.Equal(t, pulsar.SubscriptionPositionLatest, options.SubscriptionInitialPosition)
 	assert.Equal(t, 5*time.Second, options.NackRedeliveryDelay)

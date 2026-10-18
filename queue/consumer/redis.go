@@ -19,7 +19,7 @@ type RedisConfig struct {
 	Addr     string `json:"addr,default=127.0.0.1:6379"`
 	Password string `json:"password"`
 	DB       int    `json:"db"`
-	Key      string `json:"key,default=cdc-trigger-events"`
+	Key      string `json:"key,default=cdc-go-events"`
 	// Timeout is how long one read waits for a message, in seconds. Once it
 	// expires the loop looks at the context and at Close again, so a shutdown
 	// never has to wait for a message that does not come. Zero blocks until a
@@ -69,7 +69,7 @@ func NewRedisConsumer(cfg RedisConfig) (*RedisConsumer, error) {
 // the tag, because they depend on the caller rather than on the file.
 func normalizeRedisConfig(cfg RedisConfig) RedisConfig {
 	if cfg.Key == "" {
-		cfg.Key = "cdc-trigger-events"
+		cfg.Key = "cdc-go-events"
 	}
 	return cfg
 }

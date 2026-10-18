@@ -1,21 +1,21 @@
-CDC_TRIGGER_VERSION ?= $(shell git describe --tags --always)
-OUTPUT := cdc-trigger
-MAIN := cmd/cdc-trigger/main.go
-TASK_OUTPUT := cdc-trigger-task
-TASK_MAIN := cmd/cdc-trigger-task/main.go
-# make build CDC_TRIGGER_VERSION=v1.0.0
+APP_VERSION ?= $(shell git describe --tags --always)
+OUTPUT := cdc-go
+MAIN := cmd/cdc-go/main.go
+TASK_OUTPUT := cdc-go-task
+TASK_MAIN := cmd/cdc-go-task/main.go
+# make build APP_VERSION=v1.0.0
 build:
-	@echo "Building $(OUTPUT) with version $(CDC_TRIGGER_VERSION) ..."
-	GO111MODULE=on CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(CDC_TRIGGER_VERSION)" -o $(OUTPUT) $(MAIN)
+	@echo "Building $(OUTPUT) with version $(APP_VERSION) ..."
+	GO111MODULE=on CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(APP_VERSION)" -o $(OUTPUT) $(MAIN)
 	@echo "Build complete: $(OUTPUT)"
 
-# make build-task CDC_TRIGGER_VERSION=v1.0.0
+# make build-task APP_VERSION=v1.0.0
 build-task:
-	@echo "Building $(TASK_OUTPUT) with version $(CDC_TRIGGER_VERSION) ..."
-	GO111MODULE=on CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(CDC_TRIGGER_VERSION)" -o $(TASK_OUTPUT) $(TASK_MAIN)
+	@echo "Building $(TASK_OUTPUT) with version $(APP_VERSION) ..."
+	GO111MODULE=on CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(APP_VERSION)" -o $(TASK_OUTPUT) $(TASK_MAIN)
 	@echo "Build complete: $(TASK_OUTPUT)"
 
-# make build-all CDC_TRIGGER_VERSION=v1.0.0
+# make build-all APP_VERSION=v1.0.0
 build-all: build build-task
 
 check:

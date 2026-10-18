@@ -3,10 +3,10 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/chihqiang/cdc-trigger/config"
-	"github.com/chihqiang/cdc-trigger/queue/producer"
-	"github.com/chihqiang/cdc-trigger/source"
-	"github.com/chihqiang/cdc-trigger/store"
+	"github.com/chihqiang/cdc-go/config"
+	"github.com/chihqiang/cdc-go/queue/producer"
+	"github.com/chihqiang/cdc-go/source"
+	"github.com/chihqiang/cdc-go/store"
 	"github.com/chihqiang/logx"
 )
 

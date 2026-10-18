@@ -9,7 +9,7 @@ import (
 	"github.com/apache/rocketmq-client-go/v2"
 	"github.com/apache/rocketmq-client-go/v2/consumer"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -120,7 +120,7 @@ func TestBuildConsumerOptions_Minimal(t *testing.T) {
 	options := buildConsumerOptions(RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	}, consumer.ConsumeFromFirstOffset)
 
 	// group, nameserver, clustering, from-where, goroutine count
@@ -130,7 +130,7 @@ func TestBuildConsumerOptions_Minimal(t *testing.T) {
 func TestBuildConsumerOptions_WithNamespace(t *testing.T) {
 	options := buildConsumerOptions(RocketMQConfig{
 		Servers:   []string{"127.0.0.1:9876"},
-		Group:     "cdc-trigger",
+		Group:     "cdc-go",
 		Namespace: "test-ns",
 	}, consumer.ConsumeFromFirstOffset)
 
@@ -140,7 +140,7 @@ func TestBuildConsumerOptions_WithNamespace(t *testing.T) {
 func TestBuildConsumerOptions_WithCredentials(t *testing.T) {
 	options := buildConsumerOptions(RocketMQConfig{
 		Servers:   []string{"127.0.0.1:9876"},
-		Group:     "cdc-trigger",
+		Group:     "cdc-go",
 		AccessKey: "AK",
 		SecretKey: "SK",
 	}, consumer.ConsumeFromFirstOffset)
@@ -151,7 +151,7 @@ func TestBuildConsumerOptions_WithCredentials(t *testing.T) {
 func TestBuildConsumerOptions_NoCredentialsWithoutBothKeys(t *testing.T) {
 	options := buildConsumerOptions(RocketMQConfig{
 		Servers:   []string{"127.0.0.1:9876"},
-		Group:     "cdc-trigger",
+		Group:     "cdc-go",
 		AccessKey: "AK",
 	}, consumer.ConsumeFromFirstOffset)
 
@@ -180,10 +180,10 @@ func TestConsumeFromWhere(t *testing.T) {
 // ---- constructor tests ----
 
 func TestNewRocketMQConsumer_ValidatesTheConfiguration(t *testing.T) {
-	_, err := NewRocketMQConsumer(RocketMQConfig{Topic: "events", Group: "cdc-trigger"})
+	_, err := NewRocketMQConsumer(RocketMQConfig{Topic: "events", Group: "cdc-go"})
 	assert.ErrorContains(t, err, "servers")
 
-	_, err = NewRocketMQConsumer(RocketMQConfig{Servers: []string{"127.0.0.1:9876"}, Group: "cdc-trigger"})
+	_, err = NewRocketMQConsumer(RocketMQConfig{Servers: []string{"127.0.0.1:9876"}, Group: "cdc-go"})
 	assert.ErrorContains(t, err, "topic")
 
 	_, err = NewRocketMQConsumer(RocketMQConfig{Servers: []string{"127.0.0.1:9876"}, Topic: "events"})
@@ -192,7 +192,7 @@ func TestNewRocketMQConsumer_ValidatesTheConfiguration(t *testing.T) {
 	_, err = NewRocketMQConsumer(RocketMQConfig{
 		Servers:          []string{"127.0.0.1:9876"},
 		Topic:            "events",
-		Group:            "cdc-trigger",
+		Group:            "cdc-go",
 		ConsumeFromWhere: "whenever",
 	})
 	assert.ErrorContains(t, err, "consume_from_where")
@@ -212,7 +212,7 @@ func TestRocketMQConsumer_Consume_StartsAndSubscribes(t *testing.T) {
 	c := newFakeRocketMQConsumer(t, RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	}, push)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -235,7 +235,7 @@ func TestRocketMQConsumer_Consume_AcknowledgesHandledMessages(t *testing.T) {
 	c := newFakeRocketMQConsumer(t, RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	}, push)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -262,7 +262,7 @@ func TestRocketMQConsumer_Consume_RetriesARejectedMessage(t *testing.T) {
 	c := newFakeRocketMQConsumer(t, RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	}, push)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -286,7 +286,7 @@ func TestRocketMQConsumer_Consume_RetriesABatchHoldingARejectedMessage(t *testin
 	c := newFakeRocketMQConsumer(t, RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	}, push)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -318,7 +318,7 @@ func TestRocketMQConsumer_Consume_AcknowledgesUndecodablePayloads(t *testing.T) 
 	c := newFakeRocketMQConsumer(t, RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	}, push)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -347,7 +347,7 @@ func TestRocketMQConsumer_Consume_ReturnsNilWhenClosed(t *testing.T) {
 	c := newFakeRocketMQConsumer(t, RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	}, push)
 
 	done := consumeInBackground(c, context.Background(), func(context.Context, types.EventData) error { return nil })
@@ -363,7 +363,7 @@ func TestRocketMQConsumer_Consume_AfterCloseDoesNothing(t *testing.T) {
 	c := newFakeRocketMQConsumer(t, RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	}, push)
 
 	assert.NoError(t, c.Close())
@@ -375,7 +375,7 @@ func TestRocketMQConsumer_Consume_ReportsCreationErrors(t *testing.T) {
 	c, err := NewRocketMQConsumer(RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	})
 	assert.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
@@ -394,7 +394,7 @@ func TestRocketMQConsumer_Consume_ReportsSubscribeErrors(t *testing.T) {
 	c := newFakeRocketMQConsumer(t, RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	}, push)
 
 	err := c.Consume(context.Background(), func(context.Context, types.EventData) error { return nil })
@@ -408,7 +408,7 @@ func TestRocketMQConsumer_Consume_ReportsStartErrors(t *testing.T) {
 	c := newFakeRocketMQConsumer(t, RocketMQConfig{
 		Servers: []string{"127.0.0.1:9876"},
 		Topic:   "events",
-		Group:   "cdc-trigger",
+		Group:   "cdc-go",
 	}, push)
 
 	err := c.Consume(context.Background(), func(context.Context, types.EventData) error { return nil })

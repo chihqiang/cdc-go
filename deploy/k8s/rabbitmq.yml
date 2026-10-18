@@ -1,6 +1,6 @@
 # kubectl apply -f deploy/k8s/rabbitmq.yml
 #
-# cdc-trigger declares the exchange and the queue itself on startup, so no init
+# cdc-go declares the exchange and the queue itself on startup, so no init
 # job is needed here.
 # In cluster addresses: rabbitmq.kube-middleware:5672 (AMQP),
 #                       rabbitmq.kube-middleware:15672 (management UI)

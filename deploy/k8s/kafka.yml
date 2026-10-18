@@ -69,7 +69,7 @@ spec:
               value: PLAINTEXT
             - name: KAFKA_LISTENERS
               value: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-            # Only the in cluster address is advertised: cdc-trigger runs in the
+            # Only the in cluster address is advertised: cdc-go runs in the
             # same cluster, no external listener is published. Reach the broker
             # from a laptop with `kubectl port-forward svc/kafka 9092:9092` and
             # add an EXTERNAL listener if the advertised address has to change.

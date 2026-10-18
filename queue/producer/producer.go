@@ -8,7 +8,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 )
 
 type ProducerType string

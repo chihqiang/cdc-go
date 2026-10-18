@@ -1,4 +1,4 @@
-module github.com/chihqiang/cdc-trigger
+module github.com/chihqiang/cdc-go
 
 go 1.25.14
 

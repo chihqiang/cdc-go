@@ -1,6 +1,6 @@
 # kubectl apply -f deploy/k8s/namespace.yml
 #
-# The cdc-trigger Deployment in cdc-trigger.yml already targets this namespace,
+# The cdc-go Deployment in cdc-go.yml already targets this namespace,
 # creating it separately keeps every other manifest applyable on its own.
 # No labels block: the API server already adds
 # kubernetes.io/metadata.name=kube-middleware to every namespace.

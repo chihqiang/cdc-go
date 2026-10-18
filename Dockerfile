@@ -4,7 +4,7 @@
 FROM golang:1.25.14-bookworm AS builder
 
 # Set build-time argument for version
-ARG CDC_TRIGGER_VERSION=main
+ARG APP_VERSION=main
 
 # Install dependencies for building Go project
 RUN apt-get update && apt-get install -y git make gcc libc6-dev && rm -rf /var/lib/apt/lists/*
@@ -16,7 +16,7 @@ WORKDIR /app
 COPY . .
 
 # Build the Go binary with the specified version
-RUN GOOS=linux make build CDC_TRIGGER_VERSION=${CDC_TRIGGER_VERSION}
+RUN GOOS=linux make build APP_VERSION=${APP_VERSION}
 
 # ---------- Runtime stage ----------
 # Use minimal Debian image for runtime
@@ -40,10 +40,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # still overrides them.
 
 # Create a non-root user for security
-RUN useradd --system --no-create-home --shell /usr/sbin/nologin cdctrigger
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin cdcgo
 
 # Copy the built binary and the configuration file from builder stage
-COPY --from=builder /app/cdc-trigger /usr/local/bin/cdc-trigger
+COPY --from=builder /app/cdc-go /usr/local/bin/cdc-go
 COPY --from=builder /app/config.yml /app/config.yml
 
 # Directory the file store writes its offsets into (the default is the relative
@@ -51,13 +51,13 @@ COPY --from=builder /app/config.yml /app/config.yml
 RUN mkdir -p /app/runtime
 
 # Set ownership to the non-root user
-RUN chown -R cdctrigger:cdctrigger /usr/local/bin/cdc-trigger /app
+RUN chown -R cdcgo:cdcgo /usr/local/bin/cdc-go /app
 
 # Switch to non-root user
-USER cdctrigger
+USER cdcgo
 
 # Set working directory
 WORKDIR /app
 
 # Default command to run the binary
-CMD ["cdc-trigger","-c","/app/config.yml"]
+CMD ["cdc-go","-c","/app/config.yml"]

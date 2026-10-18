@@ -1,8 +1,8 @@
 # ==========================================
-# cdc-trigger Task Configuration File Example (YAML)
+# cdc-go Task Configuration File Example (YAML)
 # ==========================================
 #
-# This file configures the consumer side of cdc-trigger: it reads the events
+# This file configures the consumer side of cdc-go: it reads the events
 # a source published to a middleware and routes them to the tasks declared here.
 #
 # Environment variables are referenced from inside the file with ${VAR} or
@@ -19,24 +19,24 @@ consumer:
     addr: "${CONSUMER_REDIS_ADDR:-127.0.0.1:6379}"
     password: "${CONSUMER_REDIS_PASSWORD:-}"
     db: "${CONSUMER_REDIS_DB:-0}"
-    key: "${CONSUMER_REDIS_KEY:-cdc-trigger-events}"
+    key: "${CONSUMER_REDIS_KEY:-cdc-go-events}"
     timeout: 5                       # BRPOP timeout in seconds (0 = block forever)
 
   # Kafka settings
   kafka:
     brokers:
       - "${CONSUMER_KAFKA_BROKERS:-127.0.0.1:9092}"
-    topic: "${CONSUMER_KAFKA_TOPIC:-cdc-trigger-events}"
-    group: "${CONSUMER_KAFKA_GROUP:-cdc-trigger-consumer-group}"
+    topic: "${CONSUMER_KAFKA_TOPIC:-cdc-go-events}"
+    group: "${CONSUMER_KAFKA_GROUP:-cdc-go-consumer-group}"
     start_offset: "${CONSUMER_KAFKA_START_OFFSET:-first}"  # first / last
 
   # RabbitMQ settings
   rabbitmq:
     url: "${CONSUMER_RABBITMQ_URL:-amqp://guest:guest@127.0.0.1:5672/}"
-    exchange: "${CONSUMER_RABBITMQ_EXCHANGE:-cdc-trigger-exchange}"
+    exchange: "${CONSUMER_RABBITMQ_EXCHANGE:-cdc-go-exchange}"
     exchange_type: "${CONSUMER_RABBITMQ_EXCHANGE_TYPE:-direct}"
-    routing_key: "${CONSUMER_RABBITMQ_ROUTING_KEY:-cdc-trigger-events}"
-    queue: "${CONSUMER_RABBITMQ_QUEUE:-cdc-trigger-events}"
+    routing_key: "${CONSUMER_RABBITMQ_ROUTING_KEY:-cdc-go-events}"
+    queue: "${CONSUMER_RABBITMQ_QUEUE:-cdc-go-events}"
     durable: true
     auto_delete: false
     exclusive: false
@@ -49,8 +49,8 @@ consumer:
   rocketmq:
     servers:
       - "${CONSUMER_ROCKETMQ_SERVERS:-127.0.0.1:9876}"
-    topic: "${CONSUMER_ROCKETMQ_TOPIC:-cdc-trigger-events}"
-    group: "${CONSUMER_ROCKETMQ_GROUP:-cdc-trigger-consumer-group}"
+    topic: "${CONSUMER_ROCKETMQ_TOPIC:-cdc-go-events}"
+    group: "${CONSUMER_ROCKETMQ_GROUP:-cdc-go-consumer-group}"
     namespace: "${CONSUMER_ROCKETMQ_NAMESPACE:-}"
     access_key: "${CONSUMER_ROCKETMQ_ACCESS_KEY:-}"
     secret_key: "${CONSUMER_ROCKETMQ_SECRET_KEY:-}"
@@ -60,8 +60,8 @@ consumer:
   # Pulsar settings
   pulsar:
     url: "${CONSUMER_PULSAR_URL:-pulsar://127.0.0.1:6650}"
-    topic: "${CONSUMER_PULSAR_TOPIC:-cdc-trigger-events}"
-    subscription: "${CONSUMER_PULSAR_SUBSCRIPTION:-cdc-trigger-subscription}"
+    topic: "${CONSUMER_PULSAR_TOPIC:-cdc-go-events}"
+    subscription: "${CONSUMER_PULSAR_SUBSCRIPTION:-cdc-go-subscription}"
     subscription_type: "${CONSUMER_PULSAR_SUBSCRIPTION_TYPE:-shared}"      # exclusive / shared / failover / key_shared
     subscription_initial_position: "${CONSUMER_PULSAR_SUBSCRIPTION_INITIAL_POSITION:-earliest}"  # earliest / latest
     token: "${CONSUMER_PULSAR_TOKEN:-}"

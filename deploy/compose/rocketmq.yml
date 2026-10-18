@@ -3,18 +3,18 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: cdc-trigger-mysql
+    container_name: cdc-go-mysql
     restart: always
     ports:
       - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: 123456
-      MYSQL_DATABASE: cdctrigger
+      MYSQL_DATABASE: cdcgo
       TZ: Asia/Shanghai
     volumes:
-      - ./:/cdc-trigger
+      - ./:/cdc-go
     networks:
-      - cdc-trigger-network
+      - cdc-go-network
     healthcheck:
       test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p123456" ]
       interval: 5s
@@ -23,9 +23,9 @@ services:
 
   rocketmq-nameserver:
     image: apache/rocketmq:4.9.7
-    container_name: cdc-trigger-rocketmq-nameserver
+    container_name: cdc-go-rocketmq-nameserver
     networks:
-      - cdc-trigger-network
+      - cdc-go-network
     ports:
       - "9876:9876"
     environment:
@@ -40,9 +40,9 @@ services:
 
   rocketmq-broker:
     image: apache/rocketmq:4.9.7
-    container_name: cdc-trigger-rocketmq-broker
+    container_name: cdc-go-rocketmq-broker
     networks:
-      - cdc-trigger-network
+      - cdc-go-network
     ports:
       - "10911:10911"
       - "10909:10909"
@@ -53,7 +53,7 @@ services:
       BROKER_CLUSTER_NAME: DefaultCluster
       BROKER_NAME: broker-a
     volumes:
-      # brokerIP1 = 127.0.0.1, so that a cdc-trigger running on the host is told
+      # brokerIP1 = 127.0.0.1, so that a cdc-go running on the host is told
       # to reach the broker through the published port instead of through an
       # address that only exists inside the compose network.
       - ./rocketmq/broker.conf:/home/rocketmq/broker.conf:ro
@@ -67,5 +67,5 @@ services:
       retries: 10
       start_period: 30s
 networks:
-  cdc-trigger-network:
+  cdc-go-network:
     driver: bridge

@@ -3,18 +3,18 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: cdc-trigger-mysql
+    container_name: cdc-go-mysql
     restart: always
     ports:
       - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: 123456
-      MYSQL_DATABASE: cdctrigger
+      MYSQL_DATABASE: cdcgo
       TZ: Asia/Shanghai
     volumes:
-      - ./:/cdc-trigger
+      - ./:/cdc-go
     networks:
-      - cdc-trigger-network
+      - cdc-go-network
     healthcheck:
       test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p123456" ]
       interval: 5s
@@ -23,9 +23,9 @@ services:
 
   pulsar:
     image: apachepulsar/pulsar:4.1.1
-    container_name: cdc-trigger-pulsar
+    container_name: cdc-go-pulsar
     networks:
-      - cdc-trigger-network
+      - cdc-go-network
     ports:
       - "6650:6650"
       - "8080:8080"
@@ -40,5 +40,5 @@ services:
       start_period: 20s
 
 networks:
-  cdc-trigger-network:
+  cdc-go-network:
     driver: bridge

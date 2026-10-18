@@ -18,11 +18,11 @@ type RocketMQConfig struct {
 	// Servers - RocketMQ NameServer address list, e.g., ["127.0.0.1:9876"]
 	Servers []string `json:"servers,default=127.0.0.1:9876"`
 	// Topic - The topic name the events are read from
-	Topic string `json:"topic,default=cdc-trigger-events"`
+	Topic string `json:"topic,default=cdc-go-events"`
 	// Group - The consumer group name. It is what remembers how far the topic was
 	// consumed, so a restart with the same group picks up where the previous run
 	// stopped.
-	Group string `json:"group,default=cdc-trigger-consumer-group"`
+	Group string `json:"group,default=cdc-go-consumer-group"`
 	// Namespace - The namespace
 	Namespace string `json:"namespace"`
 	// AccessKey - Access key

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -138,7 +138,7 @@ func TestNewRabbitMQConsumer_NormalizesTheConfiguration(t *testing.T) {
 
 func TestRabbitMQConsumer_Dial_RefusesAHeadersExchange(t *testing.T) {
 	c, err := NewRabbitMQConsumer(RabbitMQConfig{
-		Exchange:     "cdc-trigger-exchange",
+		Exchange:     "cdc-go-exchange",
 		ExchangeType: "headers",
 	})
 	assert.NoError(t, err)

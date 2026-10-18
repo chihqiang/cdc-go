@@ -134,7 +134,7 @@ spec:
       containers:
         - name: rocketmq-broker
           image: apache/rocketmq:4.9.7
-          # autoCreateTopicEnable lets the broker create cdc-trigger-events on
+          # autoCreateTopicEnable lets the broker create cdc-go-events on
           # the first send, so the topic does not have to exist beforehand.
           command:
             - sh

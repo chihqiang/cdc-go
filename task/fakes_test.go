@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chihqiang/cdc-trigger/queue/consumer"
-	"github.com/chihqiang/cdc-trigger/types"
+	"github.com/chihqiang/cdc-go/queue/consumer"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/stretchr/testify/assert"
 )
 
