@@ -225,6 +225,10 @@ The image ships `/app/config.yml` (the file from the repository root) and is sta
 `cdc-go -c /app/config.yml`. Every `-e` below fills a `${VAR:-fallback}` reference in that file,
 so the same image can be pointed at another database, storage or producer without a rebuild:
 
+> The image is published to both Docker Hub (`zhiqiangwang/app:cdc-go`) and Aliyun Container
+> Registry (`registry.cn-hangzhou.aliyuncs.com/buildx/app:cdc-go`). The examples below use the
+> Docker Hub tag; substitute the Aliyun tag if that registry is closer to you.
+
 ```bash
 # =========================
 # 1️⃣ MySQL only (read from MySQL)
