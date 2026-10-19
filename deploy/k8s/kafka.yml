@@ -83,9 +83,12 @@ spec:
               value: PLAINTEXT://kafka:9092
             # Without this the image keeps its default log.dirs=/tmp/kafka-logs,
             # which is not the path the PVC is mounted at: the 20Gi volume stays
-            # empty and every restart starts from a fresh metadata log.
+            # empty and every restart starts from a fresh metadata log. Point it
+            # at a subdirectory instead of the mount root, because a freshly
+            # formatted volume contains lost+found and Kafka refuses to start
+            # when the log directory holds anything but topic data.
             - name: KAFKA_LOG_DIRS
-              value: /var/lib/kafka/data
+              value: /var/lib/kafka/data/kafka
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
               value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
             # One broker, so every internal topic can only be replicated once.
