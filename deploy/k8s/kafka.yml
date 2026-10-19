@@ -11,20 +11,21 @@ kind: Service
 metadata:
   labels:
     app: kafka-broker
-  # Governing service of the StatefulSet: gives the pod the stable DNS name
-  # kafka-0.kafka-headless.kube-middleware.svc.cluster.local.
-  name: kafka-headless
+  # Single Service on purpose: it is both the governing service of the
+  # StatefulSet (stable pod DNS name kafka-0.kafka.kube-middleware.svc) and the
+  # in cluster client address (kafka.kube-middleware.svc:9092). A ClusterIP
+  # service would duplicate the selector and add nothing for a single replica.
+  name: kafka
   namespace: kube-middleware
 spec:
   clusterIP: None
+  # The broker is its own controller, so keep its address resolvable while it
+  # bootstraps instead of waiting for readiness.
   publishNotReadyAddresses: true
   ports:
     - name: plaintext
       port: 9092
       targetPort: plaintext
-    - name: controller
-      port: 9093
-      targetPort: controller
   selector:
     app: kafka-broker
 ---
@@ -40,7 +41,12 @@ spec:
   selector:
     matchLabels:
       app: kafka-broker
-  serviceName: kafka-headless
+  serviceName: kafka
+  # The PVC holds the KRaft metadata log, so keep it if this StatefulSet is
+  # ever recreated (for example when changing an immutable field).
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   template:
     metadata:
       labels:
@@ -63,11 +69,10 @@ spec:
               value: broker,controller
             - name: KAFKA_CONTROLLER_QUORUM_VOTERS
               # Broker and controller share this pod, so the controller is
-              # reached over loopback. Resolving a Service name here deadlocks:
-              # the "kafka" Service only gets endpoints once the pod is Ready,
-              # and readiness needs the controller. KRaft then fails with
-              # UnknownHostException, or the registration RPC times out in
-              # "channel manager timed out before sending the request".
+              # reached over loopback. Using the Service name would make the
+              # pod resolve its own address while still bootstrapping, which
+              # previously deadlocked (endpoints were only published after
+              # readiness, and readiness needs the controller).
               value: 1@127.0.0.1:9093
             - name: KAFKA_CONTROLLER_LISTENER_NAMES
               value: CONTROLLER
@@ -124,21 +129,3 @@ spec:
         resources:
           requests:
             storage: 20Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app: kafka-broker
-  name: kafka
-  namespace: kube-middleware
-spec:
-  ports:
-    - name: plaintext
-      port: 9092
-      targetPort: plaintext
-    - name: controller
-      port: 9093
-      targetPort: controller
-  selector:
-    app: kafka-broker
