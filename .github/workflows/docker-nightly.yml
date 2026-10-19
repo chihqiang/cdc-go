@@ -37,6 +37,9 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
+          # Aliyun ACR rejects the OCI empty descriptor used by attestation manifests.
+          provenance: false
+          sbom: false
           tags: |
             zhiqiangwang/app:cdc-go
             registry.cn-hangzhou.aliyuncs.com/buildx/app:cdc-go
