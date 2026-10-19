@@ -62,7 +62,13 @@ spec:
             - name: KAFKA_PROCESS_ROLES
               value: broker,controller
             - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-              value: 1@kafka:9093
+              # Broker and controller share this pod, so the controller is
+              # reached over loopback. Resolving a Service name here deadlocks:
+              # the "kafka" Service only gets endpoints once the pod is Ready,
+              # and readiness needs the controller. KRaft then fails with
+              # UnknownHostException, or the registration RPC times out in
+              # "channel manager timed out before sending the request".
+              value: 1@127.0.0.1:9093
             - name: KAFKA_CONTROLLER_LISTENER_NAMES
               value: CONTROLLER
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
@@ -75,6 +81,11 @@ spec:
             # add an EXTERNAL listener if the advertised address has to change.
             - name: KAFKA_ADVERTISED_LISTENERS
               value: PLAINTEXT://kafka:9092
+            # Without this the image keeps its default log.dirs=/tmp/kafka-logs,
+            # which is not the path the PVC is mounted at: the 20Gi volume stays
+            # empty and every restart starts from a fresh metadata log.
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
               value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
             # One broker, so every internal topic can only be replicated once.
@@ -94,24 +105,6 @@ spec:
           volumeMounts:
             - mountPath: /var/lib/kafka/data
               name: data
-          startupProbe:
-            tcpSocket:
-              port: controller
-            failureThreshold: 30
-            periodSeconds: 10
-          readinessProbe:
-            exec:
-              command:
-                - /opt/kafka/bin/kafka-broker-api-versions.sh
-                - --bootstrap-server
-                - kafka:9092
-            initialDelaySeconds: 10
-            periodSeconds: 10
-          livenessProbe:
-            tcpSocket:
-              port: plaintext
-            initialDelaySeconds: 30
-            periodSeconds: 20
           resources:
             requests:
               cpu: 250m
@@ -127,7 +120,7 @@ spec:
           - ReadWriteOnce
         resources:
           requests:
-            storage: 5Gi
+            storage: 20Gi
 ---
 apiVersion: v1
 kind: Service
