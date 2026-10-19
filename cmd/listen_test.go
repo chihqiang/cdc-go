@@ -26,8 +26,8 @@ func TestSetupComponents_InvalidProducerType(t *testing.T) {
 	// File store will succeed, source will fail because it tries to
 	// connect to MySQL. The store should be closed to avoid a leak.
 	cfg := &config.Config{
-		Store:  store.Config{Type: store.FileStoreType, File: store.FileConfig{Dir: t.TempDir()}},
-		Source: source.Config{Type: source.SourceTypeMysql, Mysql: source.MysqlConfig{Addr: "127.0.0.1:1"}},
+		Store:    store.Config{Type: store.FileStoreType, File: store.FileConfig{Dir: t.TempDir()}},
+		Source:   source.Config{Type: source.SourceTypeMysql, Mysql: source.MysqlConfig{Addr: "127.0.0.1:1"}},
 		Producer: producer.Config{Type: "unknown"},
 	}
 
