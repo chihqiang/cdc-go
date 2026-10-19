@@ -11,9 +11,11 @@ kind: Service
 metadata:
   labels:
     app: redis-store
-  # Governing service of the StatefulSet: gives the pod the stable DNS name
-  # redis-0.redis-headless.kube-middleware.svc.cluster.local.
-  name: redis-headless
+  # Single Service on purpose: it is both the governing service of the
+  # StatefulSet (stable pod DNS name redis-0.redis.kube-middleware.svc) and the
+  # in cluster client address redis.kube-middleware.svc:6379. One replica, so a
+  # ClusterIP service would only duplicate the selector.
+  name: redis
   namespace: kube-middleware
 spec:
   clusterIP: None
@@ -39,7 +41,12 @@ spec:
   selector:
     matchLabels:
       app: redis-store
-  serviceName: redis-headless
+  serviceName: redis
+  # The PVC holds the AOF/RDB files, so keep it if this StatefulSet is ever
+  # recreated (for example when changing an immutable field).
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   template:
     metadata:
       labels:
@@ -97,18 +104,3 @@ spec:
         resources:
           requests:
             storage: 1Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app: redis-store
-  name: redis
-  namespace: kube-middleware
-spec:
-  ports:
-    - name: redis
-      port: 6379
-      targetPort: redis
-  selector:
-    app: redis-store
