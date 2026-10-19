@@ -75,22 +75,6 @@ spec:
           volumeMounts:
             - mountPath: /var/lib/rabbitmq
               name: data
-          readinessProbe:
-            exec:
-              command:
-                - rabbitmq-diagnostics
-                - -q
-                - check_running
-            initialDelaySeconds: 20
-            periodSeconds: 15
-          livenessProbe:
-            exec:
-              command:
-                - rabbitmq-diagnostics
-                - -q
-                - ping
-            initialDelaySeconds: 60
-            periodSeconds: 30
           resources:
             requests:
               cpu: 200m

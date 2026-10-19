@@ -77,18 +77,6 @@ spec:
           volumeMounts:
             - mountPath: /pulsar/data
               name: data
-          readinessProbe:
-            httpGet:
-              path: /admin/v2/brokers/health
-              port: http
-            initialDelaySeconds: 20
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /admin/v2/brokers/health
-              port: http
-            initialDelaySeconds: 60
-            periodSeconds: 30
           resources:
             requests:
               cpu: 500m

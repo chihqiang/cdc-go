@@ -60,16 +60,6 @@ spec:
           ports:
             - containerPort: 9876
               name: nameserver
-          readinessProbe:
-            tcpSocket:
-              port: nameserver
-            initialDelaySeconds: 20
-            periodSeconds: 10
-          livenessProbe:
-            tcpSocket:
-              port: nameserver
-            initialDelaySeconds: 60
-            periodSeconds: 20
           resources:
             requests:
               cpu: 200m
@@ -153,16 +143,6 @@ spec:
             # Default storePathRootDir of the image, holds commitlog and consume queue.
             - mountPath: /home/rocketmq/store
               name: data
-          readinessProbe:
-            tcpSocket:
-              port: broker
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          livenessProbe:
-            tcpSocket:
-              port: broker
-            initialDelaySeconds: 60
-            periodSeconds: 20
           resources:
             requests:
               cpu: 500m
