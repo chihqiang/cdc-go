@@ -12,7 +12,10 @@ kind: Service
 metadata:
   labels:
     app: rocketmq-nameserver
-  name: rocketmq-nameserver-headless
+  # Single Service on purpose: governing service of the StatefulSet (stable pod
+  # DNS name rocketmq-nameserver-0.rocketmq-nameserver.kube-middleware.svc) and
+  # the in cluster client address rocketmq-nameserver.kube-middleware.svc:9876.
+  name: rocketmq-nameserver
   namespace: kube-middleware
 spec:
   clusterIP: None
@@ -36,7 +39,7 @@ spec:
   selector:
     matchLabels:
       app: rocketmq-nameserver
-  serviceName: rocketmq-nameserver-headless
+  serviceName: rocketmq-nameserver
   # No volumeClaimTemplates: the NameServer only keeps the routing table in
   # memory. It stays a StatefulSet to keep the stack uniform and the pod name
   # predictable to address from other manifests.
@@ -57,16 +60,6 @@ spec:
           ports:
             - containerPort: 9876
               name: nameserver
-          readinessProbe:
-            tcpSocket:
-              port: nameserver
-            initialDelaySeconds: 20
-            periodSeconds: 10
-          livenessProbe:
-            tcpSocket:
-              port: nameserver
-            initialDelaySeconds: 60
-            periodSeconds: 20
           resources:
             requests:
               cpu: 200m
@@ -79,23 +72,11 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: rocketmq-nameserver
-  name: rocketmq-nameserver
-  namespace: kube-middleware
-spec:
-  ports:
-    - name: nameserver
-      port: 9876
-      targetPort: nameserver
-  selector:
-    app: rocketmq-nameserver
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
     app: rocketmq-broker
-  name: rocketmq-broker-headless
+  # Single Service on purpose: governing service of the StatefulSet (stable pod
+  # DNS name rocketmq-broker-0.rocketmq-broker.kube-middleware.svc) and the in
+  # cluster client address rocketmq-broker.kube-middleware.svc:10911.
+  name: rocketmq-broker
   namespace: kube-middleware
 spec:
   clusterIP: None
@@ -122,7 +103,13 @@ spec:
   selector:
     matchLabels:
       app: rocketmq-broker
-  serviceName: rocketmq-broker-headless
+  serviceName: rocketmq-broker
+  # The PVC holds the commitlog and consume queue, so keep it if this
+  # StatefulSet is ever recreated (for example when changing an immutable
+  # field).
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   template:
     metadata:
       labels:
@@ -156,16 +143,6 @@ spec:
             # Default storePathRootDir of the image, holds commitlog and consume queue.
             - mountPath: /home/rocketmq/store
               name: data
-          readinessProbe:
-            tcpSocket:
-              port: broker
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          livenessProbe:
-            tcpSocket:
-              port: broker
-            initialDelaySeconds: 60
-            periodSeconds: 20
           resources:
             requests:
               cpu: 500m
@@ -182,21 +159,3 @@ spec:
         resources:
           requests:
             storage: 5Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app: rocketmq-broker
-  name: rocketmq-broker
-  namespace: kube-middleware
-spec:
-  ports:
-    - name: broker
-      port: 10911
-      targetPort: broker
-    - name: broker-vip
-      port: 10909
-      targetPort: broker-vip
-  selector:
-    app: rocketmq-broker

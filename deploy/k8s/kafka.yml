@@ -11,20 +11,21 @@ kind: Service
 metadata:
   labels:
     app: kafka-broker
-  # Governing service of the StatefulSet: gives the pod the stable DNS name
-  # kafka-0.kafka-headless.kube-middleware.svc.cluster.local.
-  name: kafka-headless
+  # Single Service on purpose: it is both the governing service of the
+  # StatefulSet (stable pod DNS name kafka-0.kafka.kube-middleware.svc) and the
+  # in cluster client address (kafka.kube-middleware.svc:9092). A ClusterIP
+  # service would duplicate the selector and add nothing for a single replica.
+  name: kafka
   namespace: kube-middleware
 spec:
   clusterIP: None
+  # The broker is its own controller, so keep its address resolvable while it
+  # bootstraps instead of waiting for readiness.
   publishNotReadyAddresses: true
   ports:
     - name: plaintext
       port: 9092
       targetPort: plaintext
-    - name: controller
-      port: 9093
-      targetPort: controller
   selector:
     app: kafka-broker
 ---
@@ -40,7 +41,12 @@ spec:
   selector:
     matchLabels:
       app: kafka-broker
-  serviceName: kafka-headless
+  serviceName: kafka
+  # The PVC holds the KRaft metadata log, so keep it if this StatefulSet is
+  # ever recreated (for example when changing an immutable field).
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   template:
     metadata:
       labels:
@@ -62,7 +68,12 @@ spec:
             - name: KAFKA_PROCESS_ROLES
               value: broker,controller
             - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-              value: 1@kafka:9093
+              # Broker and controller share this pod, so the controller is
+              # reached over loopback. Using the Service name would make the
+              # pod resolve its own address while still bootstrapping, which
+              # previously deadlocked (endpoints were only published after
+              # readiness, and readiness needs the controller).
+              value: 1@127.0.0.1:9093
             - name: KAFKA_CONTROLLER_LISTENER_NAMES
               value: CONTROLLER
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
@@ -75,6 +86,14 @@ spec:
             # add an EXTERNAL listener if the advertised address has to change.
             - name: KAFKA_ADVERTISED_LISTENERS
               value: PLAINTEXT://kafka:9092
+            # Without this the image keeps its default log.dirs=/tmp/kafka-logs,
+            # which is not the path the PVC is mounted at: the 20Gi volume stays
+            # empty and every restart starts from a fresh metadata log. Point it
+            # at a subdirectory instead of the mount root, because a freshly
+            # formatted volume contains lost+found and Kafka refuses to start
+            # when the log directory holds anything but topic data.
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data/kafka
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
               value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
             # One broker, so every internal topic can only be replicated once.
@@ -94,24 +113,6 @@ spec:
           volumeMounts:
             - mountPath: /var/lib/kafka/data
               name: data
-          startupProbe:
-            tcpSocket:
-              port: controller
-            failureThreshold: 30
-            periodSeconds: 10
-          readinessProbe:
-            exec:
-              command:
-                - /opt/kafka/bin/kafka-broker-api-versions.sh
-                - --bootstrap-server
-                - kafka:9092
-            initialDelaySeconds: 10
-            periodSeconds: 10
-          livenessProbe:
-            tcpSocket:
-              port: plaintext
-            initialDelaySeconds: 30
-            periodSeconds: 20
           resources:
             requests:
               cpu: 250m
@@ -127,22 +128,4 @@ spec:
           - ReadWriteOnce
         resources:
           requests:
-            storage: 5Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app: kafka-broker
-  name: kafka
-  namespace: kube-middleware
-spec:
-  ports:
-    - name: plaintext
-      port: 9092
-      targetPort: plaintext
-    - name: controller
-      port: 9093
-      targetPort: controller
-  selector:
-    app: kafka-broker
+            storage: 20Gi
