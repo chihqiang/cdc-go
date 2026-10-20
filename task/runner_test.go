@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -328,6 +329,88 @@ func TestRunByTimeRange_ReportsWhichTaskFailed(t *testing.T) {
 
 	assert.ErrorContains(t, err, "*task.fakeTask")
 	assert.ErrorContains(t, err, "of app.user")
+}
+
+// ---- RunAllByTimeRange tests ----
+
+func TestRunAllByTimeRange_RunsEveryTableOfEveryTask(t *testing.T) {
+	start, end := rangeOf()
+	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
+	other := &fakeTask{main: Table{Database: "app", Name: "order", PrimaryKey: "id"}}
+	r := newRunner(t, nil, tk, other)
+
+	err := r.RunAllByTimeRange(context.Background(), start, end)
+
+	assert.NoError(t, err)
+	// A task watching a main table and a sub table is run for both: each table has
+	// its own time column. The tables are worked on at the same time, so the calls
+	// are compared without an order.
+	assert.ElementsMatch(t, []rangeCall{
+		{table: tableUser, start: start, end: end},
+		{table: tableUserLog, start: start, end: end},
+	}, tk.recordedRanges())
+	assert.Equal(t, []rangeCall{{table: other.main, start: start, end: end}}, other.recordedRanges())
+}
+
+func TestRunAllByTimeRange_ReportsTheFailuresInTheSameOrderEveryTime(t *testing.T) {
+	start, end := rangeOf()
+
+	// The tables are worked through in the same order every time, so a run that
+	// failed the same way is reported the same way, however the tasks were listed.
+	for range 3 {
+		user := &fakeTask{main: tableUser, rangeErr: errors.New("the user table is down")}
+		userLog := &fakeTask{main: tableUserLog, rangeErr: errors.New("the user_log table is down")}
+		r := newRunner(t, nil, userLog, user)
+
+		msg := r.RunAllByTimeRange(context.Background(), start, end).Error()
+
+		assert.Contains(t, msg, "the user table is down")
+		assert.Contains(t, msg, "the user_log table is down")
+		assert.Less(t, strings.Index(msg, "of app.user:"), strings.Index(msg, "of app.user_log:"))
+	}
+}
+
+func TestRunAllByTimeRange_ReportsAnEmptyRange(t *testing.T) {
+	start, end := rangeOf()
+	tk := &fakeTask{main: tableUser}
+	r := newRunner(t, nil, tk)
+
+	assert.ErrorContains(t, r.RunAllByTimeRange(context.Background(), start, start), "empty")
+	assert.ErrorContains(t, r.RunAllByTimeRange(context.Background(), end, start), "empty")
+	assert.Empty(t, tk.recordedRanges())
+}
+
+func TestRunAllByTimeRange_ReportsWhichTaskFailed(t *testing.T) {
+	start, end := rangeOf()
+	tk := &fakeTask{main: tableUser, rangeErr: errors.New("the query timed out")}
+	working := &fakeTask{main: tableUserLog}
+	r := newRunner(t, nil, tk, working)
+
+	err := r.RunAllByTimeRange(context.Background(), start, end)
+
+	assert.ErrorContains(t, err, "*task.fakeTask")
+	assert.ErrorContains(t, err, "of app.user")
+	// One failing task does not keep the others from running.
+	assert.Len(t, working.recordedRanges(), 1)
+}
+
+func TestRunAllByTimeRange_WithoutTasksDoesNothing(t *testing.T) {
+	start, end := rangeOf()
+	r := newRunner(t, nil)
+
+	assert.NoError(t, r.RunAllByTimeRange(context.Background(), start, end))
+}
+
+func TestRunAllByTimeRange_DoesNotStartWorkForACanceledContext(t *testing.T) {
+	start, end := rangeOf()
+	tk := &fakeTask{main: tableUser}
+	r := newRunner(t, nil, tk)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	assert.ErrorIs(t, r.RunAllByTimeRange(ctx, start, end), context.Canceled)
+	assert.Empty(t, tk.recordedRanges())
 }
 
 // ---- the guards around a runner that is misused or misdeclared ----

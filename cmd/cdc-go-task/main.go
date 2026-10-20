@@ -29,6 +29,7 @@ func main() {
 	runCmd := cmd.TaskRunCommand()
 	runByPkCmd := cmd.TaskRunByPrimaryKeyCommand()
 	runByRangeCmd := cmd.TaskRunByTimeRangeCommand()
+	runAllByRangeCmd := cmd.TaskRunAllByTimeRangeCommand()
 
 	app.Flags = cmd.TaskFlags()
 	app.Before = cmd.TaskBefore
@@ -36,6 +37,7 @@ func main() {
 		runCmd,
 		runByPkCmd,
 		runByRangeCmd,
+		runAllByRangeCmd,
 	}
 	// Default action is "run" when no subcommand is given.
 	app.Action = runCmd.Action

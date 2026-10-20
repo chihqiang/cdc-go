@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -72,6 +73,22 @@ func (ws watchers) add(t Table, w watcher) {
 // of Returns the tasks watching a table, given as db.table
 func (ws watchers) of(key string) []watcher {
 	return ws[key]
+}
+
+// all Returns every table of every task, ordered by table, so that a run over all
+// of them reports its failures in the same order every time.
+func (ws watchers) all() []watcher {
+	keys := make([]string, 0, len(ws))
+	for key := range ws {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	all := make([]watcher, 0, len(keys))
+	for _, key := range keys {
+		all = append(all, ws[key]...)
+	}
+	return all
 }
 
 // named Returns the tasks watching a table a caller named, or the reason that
