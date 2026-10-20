@@ -189,6 +189,11 @@ The primary-key run receives the change the run comes from as a
 `types.EventRowData`, so a task can read what happened (`Type`), the values the
 row has now (`Data`), and the ones an update moved away from (`Old`); it is
 empty when the run was asked for by a caller rather than read from a change.
+The row itself is named by a `types.PrimaryKey`, which keeps the value as the
+source reported it and reads it as the type the task knows its key to be:
+`Int()`, `Int64()`, `Uint64()`, `Float64()`, `Bool()`, and `String()`, with
+`Value()` for the original. A value that does not fit the requested type
+reports an error instead of being silently converted.
 Implementations should be safe for concurrent use, repeatable when an event is
 delivered again, and should return when their context is canceled so shutdown
 can finish cleanly.

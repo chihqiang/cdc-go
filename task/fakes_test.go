@@ -21,7 +21,7 @@ var tableUserLog = Table{Database: "app", Name: "user_log", PrimaryKey: "id", Re
 type call struct {
 	table     Table
 	row       types.EventRowData
-	mainPkVal any
+	mainPkVal types.PrimaryKey
 }
 
 // rangeCall is one execution of a task for a time range.
@@ -45,7 +45,7 @@ type fakeTask struct {
 func (f *fakeTask) MainTable() Table   { return f.main }
 func (f *fakeTask) SubTables() []Table { return f.subs }
 
-func (f *fakeTask) RunByPrimaryKey(_ context.Context, table Table, row types.EventRowData, mainPkVal any) error {
+func (f *fakeTask) RunByPrimaryKey(_ context.Context, table Table, row types.EventRowData, mainPkVal types.PrimaryKey) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, call{table: table, row: row, mainPkVal: mainPkVal})

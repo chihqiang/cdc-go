@@ -182,7 +182,7 @@ func TaskRunByPrimaryKey(ctx context.Context, cfg *TaskConfig, table, mainPkVal 
 
 	logx.Info("running tasks for the row %s of %s", mainPkVal, table)
 	// The row was named on the command line, so there is no change to pass on.
-	return runner.RunByPrimaryKey(ctx, table, types.EventRowData{}, mainPkVal)
+	return runner.RunByPrimaryKey(ctx, table, types.EventRowData{}, types.NewPrimaryKey(mainPkVal))
 }
 
 // TaskRunByTimeRangeCommand creates the "run-by-range" subcommand: it executes

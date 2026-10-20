@@ -197,7 +197,7 @@ func runEach(ctx context.Context, watchers []watcher, fn func(watcher) error) er
 
 // runTask Runs one task for one row of its main table, and wraps what it reports
 // with what the run was about.
-func runTask(ctx context.Context, w watcher, tableKey string, row types.EventRowData, mainPkVal any) error {
+func runTask(ctx context.Context, w watcher, tableKey string, row types.EventRowData, mainPkVal types.PrimaryKey) error {
 	if err := w.task.RunByPrimaryKey(ctx, w.table, row, mainPkVal); err != nil {
 		return fmt.Errorf("%T failed for the row %v of %s: %w", w.task, mainPkVal, tableKey, err)
 	}
