@@ -47,7 +47,7 @@ func (t *LogTask) SubTables() []Table {
 
 // RunByPrimaryKey Writes the row of the main table the run is about, and the
 // change it comes from when there is one.
-func (t *LogTask) RunByPrimaryKey(_ context.Context, table Table, row types.EventRowData, mainPkVal any) error {
+func (t *LogTask) RunByPrimaryKey(_ context.Context, table Table, row types.EventRowData, mainPkVal types.PrimaryKey) error {
 	if row.Type == "" {
 		logx.Info("%T: the row %v of %s", t, mainPkVal, tableKeyOf(table.Database, table.Name))
 		return nil

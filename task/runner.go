@@ -93,8 +93,8 @@ func (r *Runner) Run(ctx context.Context) error {
 // table says which table the change is about. It is the Database and Name of one
 // of the tables the tasks declared, joined as db.table:
 //
-//	r.RunByPrimaryKey(ctx, "app.user", types.EventRowData{}, 42)     // the user 42 changed
-//	r.RunByPrimaryKey(ctx, "app.user_log", types.EventRowData{}, 42) // the user_log rows of it changed
+//	r.RunByPrimaryKey(ctx, "app.user", types.EventRowData{}, types.NewPrimaryKey(42))     // the user 42 changed
+//	r.RunByPrimaryKey(ctx, "app.user_log", types.EventRowData{}, types.NewPrimaryKey(42)) // the user_log rows of it changed
 //
 // Both name the same row of the main table, which is the row the tasks are run
 // for: mainPkVal holds the value of Table.PrimaryKey when table is the main
@@ -102,8 +102,8 @@ func (r *Runner) Run(ctx context.Context) error {
 //
 // row is the change the run comes from, and reaches the tasks as it is. A run
 // asked for by a caller has no change behind it, and passes the zero value.
-func (r *Runner) RunByPrimaryKey(ctx context.Context, table string, row types.EventRowData, mainPkVal any) error {
-	if mainPkVal == nil || mainPkVal == "" {
+func (r *Runner) RunByPrimaryKey(ctx context.Context, table string, row types.EventRowData, mainPkVal types.PrimaryKey) error {
+	if mainPkVal.IsEmpty() {
 		return fmt.Errorf("the run of %s needs the value of the main table's primary key", table)
 	}
 	watchers, err := r.watched.named(table)
@@ -192,11 +192,12 @@ func (r *Runner) handle(ctx context.Context, event types.EventData) error {
 // of a sub table names it with the column pointing at it. An update carries the
 // values the row has now, so a change that moved a sub table row to another main
 // row names the one it moved to: the main row it came from is not run again.
-func (w watcher) mainPkVal(event types.EventData) (any, bool) {
+func (w watcher) mainPkVal(event types.EventData) (types.PrimaryKey, bool) {
 	value, found := event.Row.Data[w.keyColumn()]
+	key := types.NewPrimaryKey(value)
 	// An empty name is no more a row than a missing one: a primary key is never
 	// an empty string.
-	return value, found && value != nil && value != ""
+	return key, found && !key.IsEmpty()
 }
 
 // Close Stops the consumption and releases the consumer.

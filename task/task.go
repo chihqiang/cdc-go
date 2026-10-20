@@ -64,11 +64,16 @@ type ITask interface {
 	// carries it in that sub table's RefColumn. Whichever table the change came
 	// from, this is the row of the main table to work on.
 	//
+	// The source reports the value with the type its own driver uses -- an int64
+	// for an integer column, a string for a text one, bytes for a binary one -- so
+	// the key is read as the type the task knows its key to be: mainPkVal.Int64(),
+	// mainPkVal.String(), and so on. Value returns it as it arrived.
+	//
 	// The change says what happened, but it is mainPkVal that names the row: the
 	// task works on the state the row is in now, so a row that reads as absent is
 	// one that was deleted. A row that moved, such as a sub table row pointing at
 	// another main row, is worked on where it moved to.
-	RunByPrimaryKey(ctx context.Context, table Table, row types.EventRowData, mainPkVal any) error
+	RunByPrimaryKey(ctx context.Context, table Table, row types.EventRowData, mainPkVal types.PrimaryKey) error
 
 	// RunByTimeRange Executes the task for the rows whose time column falls in
 	// [start, end).
