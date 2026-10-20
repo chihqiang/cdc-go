@@ -93,13 +93,16 @@ func (r *Runner) Run(ctx context.Context) error {
 // table says which table the change is about. It is the Database and Name of one
 // of the tables the tasks declared, joined as db.table:
 //
-//	r.RunByPrimaryKey(ctx, "app.user", 42)     // the user 42 changed
-//	r.RunByPrimaryKey(ctx, "app.user_log", 42) // the user_log rows of it changed
+//	r.RunByPrimaryKey(ctx, "app.user", types.EventRowData{}, 42)     // the user 42 changed
+//	r.RunByPrimaryKey(ctx, "app.user_log", types.EventRowData{}, 42) // the user_log rows of it changed
 //
 // Both name the same row of the main table, which is the row the tasks are run
 // for: mainPkVal holds the value of Table.PrimaryKey when table is the main
 // table, and the value of Table.RefColumn when it is a sub table.
-func (r *Runner) RunByPrimaryKey(ctx context.Context, table string, mainPkVal any) error {
+//
+// row is the change the run comes from, and reaches the tasks as it is. A run
+// asked for by a caller has no change behind it, and passes the zero value.
+func (r *Runner) RunByPrimaryKey(ctx context.Context, table string, row types.EventRowData, mainPkVal any) error {
 	if mainPkVal == nil || mainPkVal == "" {
 		return fmt.Errorf("the run of %s needs the value of the main table's primary key", table)
 	}
@@ -109,7 +112,7 @@ func (r *Runner) RunByPrimaryKey(ctx context.Context, table string, mainPkVal an
 	}
 
 	return runEach(ctx, watchers, func(w watcher) error {
-		return runTask(ctx, w, table, mainPkVal)
+		return runTask(ctx, w, table, row, mainPkVal)
 	})
 }
 
@@ -178,7 +181,7 @@ func (r *Runner) handle(ctx context.Context, event types.EventData) error {
 				key, w.keyColumn(), w.keyRole())
 			return nil
 		}
-		return runTask(ctx, w, key, mainPkVal)
+		return runTask(ctx, w, key, event.Row, mainPkVal)
 	})
 }
 

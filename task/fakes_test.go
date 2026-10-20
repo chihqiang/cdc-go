@@ -20,6 +20,7 @@ var tableUserLog = Table{Database: "app", Name: "user_log", PrimaryKey: "id", Re
 // call is one execution of a task for a row, as the runner asked for it.
 type call struct {
 	table     Table
+	row       types.EventRowData
 	mainPkVal any
 }
 
@@ -44,10 +45,10 @@ type fakeTask struct {
 func (f *fakeTask) MainTable() Table   { return f.main }
 func (f *fakeTask) SubTables() []Table { return f.subs }
 
-func (f *fakeTask) RunByPrimaryKey(_ context.Context, table Table, mainPkVal any) error {
+func (f *fakeTask) RunByPrimaryKey(_ context.Context, table Table, row types.EventRowData, mainPkVal any) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.calls = append(f.calls, call{table: table, mainPkVal: mainPkVal})
+	f.calls = append(f.calls, call{table: table, row: row, mainPkVal: mainPkVal})
 	return f.err
 }
 

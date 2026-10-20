@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/chihqiang/cdc-go/types"
 )
 
 // watchers The tasks watching each table, keyed by the table written as db.table
@@ -195,8 +197,8 @@ func runEach(ctx context.Context, watchers []watcher, fn func(watcher) error) er
 
 // runTask Runs one task for one row of its main table, and wraps what it reports
 // with what the run was about.
-func runTask(ctx context.Context, w watcher, tableKey string, mainPkVal any) error {
-	if err := w.task.RunByPrimaryKey(ctx, w.table, mainPkVal); err != nil {
+func runTask(ctx context.Context, w watcher, tableKey string, row types.EventRowData, mainPkVal any) error {
+	if err := w.task.RunByPrimaryKey(ctx, w.table, row, mainPkVal); err != nil {
 		return fmt.Errorf("%T failed for the row %v of %s: %w", w.task, mainPkVal, tableKey, err)
 	}
 	return nil

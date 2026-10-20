@@ -38,42 +38,58 @@ func TestNewRunner_IndexesTheTablesOfEveryTask(t *testing.T) {
 
 func TestRun_ExecutesTheTasksOfEveryEvent(t *testing.T) {
 	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
-	c := &fakeConsumer{events: []types.EventData{
-		change("app", "user", map[string]any{"id": int64(1)}),
-		change("app", "user_log", map[string]any{"id": int64(4), "user_id": int64(2)}),
-	}}
+	user := change("app", "user", map[string]any{"id": int64(1)})
+	userLog := change("app", "user_log", map[string]any{"id": int64(4), "user_id": int64(2)})
+	c := &fakeConsumer{events: []types.EventData{user, userLog}}
 	r := newRunner(t, c, tk)
 
 	assert.NoError(t, r.Run(context.Background()))
 	assert.Equal(t, []call{
-		{table: tableUser, mainPkVal: int64(1)},
-		{table: tableUserLog, mainPkVal: int64(2)},
+		{table: tableUser, row: user.Row, mainPkVal: int64(1)},
+		{table: tableUserLog, row: userLog.Row, mainPkVal: int64(2)},
 	}, tk.recorded())
+}
+
+func TestRun_HandsTheChangeToTheTask(t *testing.T) {
+	// A task may need what only the change knows: what happened, and what the row
+	// looked like before. It is passed on as it arrived.
+	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
+	event := types.EventData{Row: types.EventRowData{
+		Time:     1714521600000,
+		Database: "app",
+		Table:    "user",
+		Type:     types.DeleteEventRowType,
+		Data:     map[string]any{"id": int64(1), "name": "测试"},
+		Old:      map[string]any{"name": "旧名字"},
+	}}
+	c := &fakeConsumer{events: []types.EventData{event}}
+	r := newRunner(t, c, tk)
+
+	assert.NoError(t, r.Run(context.Background()))
+	assert.Equal(t, []call{{table: tableUser, row: event.Row, mainPkVal: int64(1)}}, tk.recorded())
 }
 
 func TestRun_NamesTheRowOfTheMainTableByItsPrimaryKey(t *testing.T) {
 	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
 	// app.user: 1 | 测试  ->  the row to work on is a.id = 1
-	c := &fakeConsumer{events: []types.EventData{
-		change("app", "user", map[string]any{"id": int64(1), "name": "测试"}),
-	}}
+	event := change("app", "user", map[string]any{"id": int64(1), "name": "测试"})
+	c := &fakeConsumer{events: []types.EventData{event}}
 	r := newRunner(t, c, tk)
 
 	assert.NoError(t, r.Run(context.Background()))
-	assert.Equal(t, []call{{table: tableUser, mainPkVal: int64(1)}}, tk.recorded())
+	assert.Equal(t, []call{{table: tableUser, row: event.Row, mainPkVal: int64(1)}}, tk.recorded())
 }
 
 func TestRun_NamesTheRowOfTheMainTableFromASubTableChange(t *testing.T) {
 	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
 	// app.user_log: 3 | 1 | 测试  ->  the row to work on is a.id = 1, which is app.user_log.user_id, not
 	// b's own id of 3.
-	c := &fakeConsumer{events: []types.EventData{
-		change("app", "user_log", map[string]any{"id": int64(3), "user_id": int64(1), "name": "测试"}),
-	}}
+	event := change("app", "user_log", map[string]any{"id": int64(3), "user_id": int64(1), "name": "测试"})
+	c := &fakeConsumer{events: []types.EventData{event}}
 	r := newRunner(t, c, tk)
 
 	assert.NoError(t, r.Run(context.Background()))
-	assert.Equal(t, []call{{table: tableUserLog, mainPkVal: int64(1)}}, tk.recorded())
+	assert.Equal(t, []call{{table: tableUserLog, row: event.Row, mainPkVal: int64(1)}}, tk.recorded())
 }
 
 func TestRun_ReadsTheValueWhateverTypeItArrivedAs(t *testing.T) {
@@ -180,7 +196,7 @@ func TestRunByPrimaryKey_RunsTheTasksOfTheMainTable(t *testing.T) {
 	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
 	r := newRunner(t, nil, tk)
 
-	err := r.RunByPrimaryKey(context.Background(), "app.user", int64(1))
+	err := r.RunByPrimaryKey(context.Background(), "app.user", types.EventRowData{}, int64(1))
 
 	assert.NoError(t, err)
 	assert.Equal(t, []call{{table: tableUser, mainPkVal: int64(1)}}, tk.recorded())
@@ -192,10 +208,27 @@ func TestRunByPrimaryKey_RunsTheTasksOfASubTable(t *testing.T) {
 
 	// The caller already knows which row of the main table to work on: a change
 	// of app.user_log 3, whose user_id is 1, is run as the user 1.
-	err := r.RunByPrimaryKey(context.Background(), "app.user_log", int64(1))
+	err := r.RunByPrimaryKey(context.Background(), "app.user_log", types.EventRowData{}, int64(1))
 
 	assert.NoError(t, err)
 	assert.Equal(t, []call{{table: tableUserLog, mainPkVal: int64(1)}}, tk.recorded())
+}
+
+func TestRunByPrimaryKey_HandsTheChangeToTheTask(t *testing.T) {
+	tk := &fakeTask{main: tableUser}
+	r := newRunner(t, nil, tk)
+	row := types.EventRowData{
+		Database: "app",
+		Table:    "user",
+		Type:     types.UpdateEventRowType,
+		Data:     map[string]any{"id": int64(1)},
+		Old:      map[string]any{"id": int64(0)},
+	}
+
+	err := r.RunByPrimaryKey(context.Background(), "app.user", row, int64(1))
+
+	assert.NoError(t, err)
+	assert.Equal(t, []call{{table: tableUser, row: row, mainPkVal: int64(1)}}, tk.recorded())
 }
 
 func TestRunByPrimaryKey_ReportsATableNobodyWatches(t *testing.T) {
@@ -205,7 +238,7 @@ func TestRunByPrimaryKey_ReportsATableNobodyWatches(t *testing.T) {
 	// Naming a table is asking for it to be worked on, so one nobody watches is
 	// a mistake worth reporting -- unlike a change, which may well be about a
 	// table no task asked for.
-	err := r.RunByPrimaryKey(context.Background(), "app.other", int64(1))
+	err := r.RunByPrimaryKey(context.Background(), "app.other", types.EventRowData{}, int64(1))
 
 	assert.ErrorContains(t, err, "no task watches the table app.other")
 	assert.Empty(t, tk.recorded())
@@ -214,7 +247,7 @@ func TestRunByPrimaryKey_ReportsATableNobodyWatches(t *testing.T) {
 func TestRunByPrimaryKey_ReportsATableWithoutADatabase(t *testing.T) {
 	r := newRunner(t, nil, &fakeTask{main: tableUser})
 
-	err := r.RunByPrimaryKey(context.Background(), "a", int64(1))
+	err := r.RunByPrimaryKey(context.Background(), "a", types.EventRowData{}, int64(1))
 	assert.ErrorContains(t, err, "db.table")
 }
 
@@ -222,7 +255,7 @@ func TestRunByPrimaryKey_ReportsAMissingValue(t *testing.T) {
 	tk := &fakeTask{main: tableUser}
 	r := newRunner(t, nil, tk)
 
-	err := r.RunByPrimaryKey(context.Background(), "app.user", nil)
+	err := r.RunByPrimaryKey(context.Background(), "app.user", types.EventRowData{}, nil)
 
 	assert.ErrorContains(t, err, "primary key")
 	assert.Empty(t, tk.recorded())
@@ -233,7 +266,7 @@ func TestRunByPrimaryKey_RunsEveryTaskWatchingTheTable(t *testing.T) {
 	working := &fakeTask{main: tableUser}
 	r := newRunner(t, nil, failing, working)
 
-	err := r.RunByPrimaryKey(context.Background(), "app.user", int64(1))
+	err := r.RunByPrimaryKey(context.Background(), "app.user", types.EventRowData{}, int64(1))
 
 	assert.ErrorContains(t, err, "the downstream is down")
 	assert.Len(t, failing.recorded(), 1)
@@ -244,7 +277,7 @@ func TestRunByPrimaryKey_ReportsWhichTaskFailed(t *testing.T) {
 	tk := &fakeTask{main: tableUser, err: errors.New("the downstream is down")}
 	r := newRunner(t, nil, tk)
 
-	err := r.RunByPrimaryKey(context.Background(), "app.user", int64(1))
+	err := r.RunByPrimaryKey(context.Background(), "app.user", types.EventRowData{}, int64(1))
 
 	assert.ErrorContains(t, err, "*task.fakeTask")
 	assert.ErrorContains(t, err, "1 of app.user")
@@ -485,7 +518,7 @@ func TestRunByPrimaryKey_ReportsAnEmptyValue(t *testing.T) {
 	tk := &fakeTask{main: tableUser}
 	r := newRunner(t, nil, tk)
 
-	err := r.RunByPrimaryKey(context.Background(), "app.user", "")
+	err := r.RunByPrimaryKey(context.Background(), "app.user", types.EventRowData{}, "")
 
 	assert.ErrorContains(t, err, "primary key")
 	assert.Empty(t, tk.recorded())
@@ -495,19 +528,20 @@ func TestRun_SubTableChangeNamesTheRowItMovedTo(t *testing.T) {
 	// A user_log row moved from the user 1 to the user 2: an update carries the
 	// values the row has now, so the run is for the user it moved to.
 	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
-	c := &fakeConsumer{events: []types.EventData{{
-		Row: types.EventRowData{
-			Database: "app",
-			Table:    "user_log",
-			Type:     types.UpdateEventRowType,
-			Data:     map[string]any{"id": int64(9), "user_id": int64(2)},
-			Old:      map[string]any{"id": int64(9), "user_id": int64(1)},
-		},
-	}}}
+	event := types.EventData{Row: types.EventRowData{
+		Database: "app",
+		Table:    "user_log",
+		Type:     types.UpdateEventRowType,
+		Data:     map[string]any{"id": int64(9), "user_id": int64(2)},
+		Old:      map[string]any{"id": int64(9), "user_id": int64(1)},
+	}}
+	c := &fakeConsumer{events: []types.EventData{event}}
 	r := newRunner(t, c, tk)
 
 	assert.NoError(t, r.Run(context.Background()))
-	assert.Equal(t, []call{{table: tableUserLog, mainPkVal: int64(2)}}, tk.recorded())
+	// The change is passed on as it is, so the task can see where the row came
+	// from and work on where it moved to.
+	assert.Equal(t, []call{{table: tableUserLog, row: event.Row, mainPkVal: int64(2)}}, tk.recorded())
 }
 
 // ---- the tasks of one change run at the same time ----
@@ -524,7 +558,7 @@ type blockingTask struct {
 func (t *blockingTask) MainTable() Table   { return t.main }
 func (t *blockingTask) SubTables() []Table { return nil }
 
-func (t *blockingTask) RunByPrimaryKey(context.Context, Table, any) error {
+func (t *blockingTask) RunByPrimaryKey(context.Context, Table, types.EventRowData, any) error {
 	t.entered <- struct{}{}
 	<-t.release
 	return nil
@@ -543,7 +577,7 @@ func TestRunByPrimaryKey_RunsTheTasksOfOneChangeAtTheSameTime(t *testing.T) {
 	r := newRunner(t, nil, first, second)
 
 	done := make(chan error, 1)
-	go func() { done <- r.RunByPrimaryKey(context.Background(), "app.user", int64(1)) }()
+	go func() { done <- r.RunByPrimaryKey(context.Background(), "app.user", types.EventRowData{}, int64(1)) }()
 
 	// Both are entered before either is released: a runner that waited for one
 	// task to finish before starting the next would never get past the first.
@@ -608,7 +642,7 @@ type waitingTask struct {
 func (t *waitingTask) MainTable() Table   { return t.main }
 func (t *waitingTask) SubTables() []Table { return nil }
 
-func (t *waitingTask) RunByPrimaryKey(ctx context.Context, _ Table, _ any) error {
+func (t *waitingTask) RunByPrimaryKey(ctx context.Context, _ Table, _ types.EventRowData, _ any) error {
 	t.entered <- struct{}{}
 	<-ctx.Done()
 	return ctx.Err()
@@ -627,7 +661,7 @@ func TestRunByPrimaryKey_DoesNotStartWorkForACanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	assert.ErrorIs(t, r.RunByPrimaryKey(ctx, "app.user", int64(1)), context.Canceled)
+	assert.ErrorIs(t, r.RunByPrimaryKey(ctx, "app.user", types.EventRowData{}, int64(1)), context.Canceled)
 	assert.Empty(t, tk.recorded())
 }
 
@@ -649,7 +683,7 @@ func TestRunByPrimaryKey_ReturnsOnceTheTaskHonorsTheCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- r.RunByPrimaryKey(ctx, "app.user", int64(1)) }()
+	go func() { done <- r.RunByPrimaryKey(ctx, "app.user", types.EventRowData{}, int64(1)) }()
 
 	// The task is under way, and the cancellation is what has to end it: the run
 	// waits for its tasks, so it returns only because they did.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/chihqiang/logx"
 )
 
@@ -44,9 +45,14 @@ func (t *LogTask) SubTables() []Table {
 	return t.Sub
 }
 
-// RunByPrimaryKey Writes the row of the main table the run is about
-func (t *LogTask) RunByPrimaryKey(_ context.Context, table Table, mainPkVal any) error {
-	logx.Info("%T: the row %v of %s", t, mainPkVal, tableKeyOf(table.Database, table.Name))
+// RunByPrimaryKey Writes the row of the main table the run is about, and the
+// change it comes from when there is one.
+func (t *LogTask) RunByPrimaryKey(_ context.Context, table Table, row types.EventRowData, mainPkVal any) error {
+	if row.Type == "" {
+		logx.Info("%T: the row %v of %s", t, mainPkVal, tableKeyOf(table.Database, table.Name))
+		return nil
+	}
+	logx.Info("%T: the row %v of %s (%s)", t, mainPkVal, tableKeyOf(table.Database, table.Name), row.Type)
 	return nil
 }
 
