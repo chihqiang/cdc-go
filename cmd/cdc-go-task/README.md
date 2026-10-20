@@ -121,6 +121,22 @@ Times must use `2006-01-02 15:04:05`. The task decides which timestamp column
 to use and performs any database work; the runner passes it the table and
 range.
 
+### `run-all-by-range`
+
+Runs every configured task for every table it watches, for rows in the
+half-open interval `[start, end)`:
+
+```bash
+./cdc-go-task -c config.task.yml run-all-by-range \
+  "2026-10-17 00:00:00" "2026-10-18 00:00:00"
+```
+
+Unlike `run-by-range`, no table is named: the whole configuration is worked
+through, main and sub tables alike, so a task watching one main table and two
+sub tables runs once per table. This is the command for a backfill that has to
+cover everything the tasks handle. Times use the same `2006-01-02 15:04:05`
+format.
+
 ## Task configuration
 
 `config.task.yml` contains a `consumer` section and a `tasks` list. Each task
@@ -162,7 +178,7 @@ The command actions and task configuration type are in
    It reads a main table's `primary_key` or a sub table's `ref_column`, then
    calls `RunByPrimaryKey` on the matching task or tasks.
 5. The manual commands build a runner without a consumer and call
-   `RunByPrimaryKey` or `RunByTimeRange` directly.
+   `RunByPrimaryKey`, `RunByTimeRange`, or `RunAllByTimeRange` directly.
 
 Tasks implement the [`task.ITask`](../../task/task.go) interface: they declare
 their main and sub tables and implement the primary-key and time-range runs.

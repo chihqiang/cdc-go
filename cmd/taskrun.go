@@ -208,15 +208,9 @@ func TaskRunByTimeRangeCommand() *cli.Command {
 // TaskRunByTimeRange builds a runner without a consumer and executes the tasks
 // watching the given table for the rows whose time falls in [start, end).
 func TaskRunByTimeRange(ctx context.Context, cfg *TaskConfig, table, startStr, endStr string) error {
-	const layout = "2006-01-02 15:04:05"
-
-	start, err := time.Parse(layout, startStr)
+	start, end, err := parseRange(startStr, endStr)
 	if err != nil {
-		return fmt.Errorf("invalid start time %q: %w (expected format: %s)", startStr, err, layout)
-	}
-	end, err := time.Parse(layout, endStr)
-	if err != nil {
-		return fmt.Errorf("invalid end time %q: %w (expected format: %s)", endStr, err, layout)
+		return err
 	}
 
 	runner, err := task.NewRunner(nil, cfg.BuildTasks()...)
@@ -226,4 +220,64 @@ func TaskRunByTimeRange(ctx context.Context, cfg *TaskConfig, table, startStr, e
 
 	logx.Info("running tasks for %s from %s to %s", table, start, end)
 	return runner.RunByTimeRange(ctx, table, start, end)
+}
+
+// TaskRunAllByTimeRangeCommand creates the "run-all-by-range" subcommand: it
+// executes every configured task for the rows of every table those tasks watch
+// whose time falls in [start, end).
+func TaskRunAllByTimeRangeCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "run-all-by-range",
+		Usage:     "Execute every configured task for the rows of every table it watches whose time falls in a range",
+		ArgsUsage: "<start> <end>",
+		Flags:     TaskFlags(),
+		Action: func(ctx context.Context, in *cli.Input, out *cli.Output) error {
+			cfg, err := loadTaskConfig(in)
+			if err != nil {
+				return err
+			}
+			args := in.Args()
+			if args.Len() < 2 {
+				return fmt.Errorf("usage: run-all-by-range <start> <end>  (time format: 2006-01-02 15:04:05)")
+			}
+			return TaskRunAllByTimeRange(ctx, cfg, args.First(), args.Get(1))
+		},
+	}
+}
+
+// TaskRunAllByTimeRange builds a runner without a consumer and executes every
+// task for every table it watches in [start, end).
+func TaskRunAllByTimeRange(ctx context.Context, cfg *TaskConfig, startStr, endStr string) error {
+	start, end, err := parseRange(startStr, endStr)
+	if err != nil {
+		return err
+	}
+
+	runner, err := task.NewRunner(nil, cfg.BuildTasks()...)
+	if err != nil {
+		return fmt.Errorf("failed to create runner: %w", err)
+	}
+
+	logx.Info("running all %d task(s) from %s to %s", len(cfg.Tasks), start, end)
+	return runner.RunAllByTimeRange(ctx, start, end)
+}
+
+// rangeLayout is the format the start and end of a range are given in.
+const rangeLayout = "2006-01-02 15:04:05"
+
+// parseRange reads the start and end of a range from the command line, and
+// reports a range that is empty before anything is built for it.
+func parseRange(startStr, endStr string) (time.Time, time.Time, error) {
+	start, err := time.Parse(rangeLayout, startStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid start time %q: %w (expected format: %s)", startStr, err, rangeLayout)
+	}
+	end, err := time.Parse(rangeLayout, endStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid end time %q: %w (expected format: %s)", endStr, err, rangeLayout)
+	}
+	if !start.Before(end) {
+		return time.Time{}, time.Time{}, fmt.Errorf("the range %s to %s is empty: it ends before it starts", start, end)
+	}
+	return start, end, nil
 }

@@ -138,6 +138,23 @@ func (r *Runner) RunByTimeRange(ctx context.Context, table string, start, end ti
 	})
 }
 
+// RunAllByTimeRange Executes every task for the rows of every table it watches
+// whose time falls in [start, end).
+//
+// It is the whole configuration worked through once: what RunByTimeRange does
+// for one named table, this does for all of them, main and sub alike, since the
+// rows of each table have their own time column. A task watching several tables
+// is therefore run once per table.
+func (r *Runner) RunAllByTimeRange(ctx context.Context, start, end time.Time) error {
+	if !start.Before(end) {
+		return fmt.Errorf("the range %s to %s is empty: it ends before it starts", start, end)
+	}
+
+	return runEach(ctx, r.watched.all(), func(w watcher) error {
+		return runTaskRange(ctx, w, tableKeyOf(w.table.Database, w.table.Name), start, end)
+	})
+}
+
 // handle Executes every task watching the table a change belongs to. It is the
 // handler the events are consumed with.
 func (r *Runner) handle(ctx context.Context, event types.EventData) error {
