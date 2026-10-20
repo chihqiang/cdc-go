@@ -10,6 +10,7 @@ import (
 
 	"github.com/chihqiang/cdc-go/queue/consumer"
 	"github.com/chihqiang/cdc-go/task"
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/chihqiang/cli"
 	"github.com/chihqiang/logx"
 	"github.com/chihqiang/readin"
@@ -180,7 +181,8 @@ func TaskRunByPrimaryKey(ctx context.Context, cfg *TaskConfig, table, mainPkVal 
 	}
 
 	logx.Info("running tasks for the row %s of %s", mainPkVal, table)
-	return runner.RunByPrimaryKey(ctx, table, mainPkVal)
+	// The row was named on the command line, so there is no change to pass on.
+	return runner.RunByPrimaryKey(ctx, table, types.EventRowData{}, mainPkVal)
 }
 
 // TaskRunByTimeRangeCommand creates the "run-by-range" subcommand: it executes

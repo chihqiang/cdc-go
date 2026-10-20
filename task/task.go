@@ -7,6 +7,8 @@ package task
 import (
 	"context"
 	"time"
+
+	"github.com/chihqiang/cdc-go/types"
 )
 
 // Table Describes one table a task watches: where it lives, what identifies one
@@ -51,16 +53,22 @@ type ITask interface {
 	// RunByPrimaryKey Executes the task for the one row of MainTable the change
 	// is about.
 	//
+	// row is the change the run comes from, as the source reported it: Type says
+	// what happened, Data holds the values the row has now, and Old the ones an
+	// update moved away from. It is the zero value when the run was asked for by a
+	// caller rather than read from a change -- `cdc-go-task run-by-pk` -- so a task
+	// that works from it has to check Type before trusting it.
+	//
 	// mainPkVal is the value of MainTable.PrimaryKey for that row: a change in the
 	// main table carries it as its own primary key, and a change in a sub table
 	// carries it in that sub table's RefColumn. Whichever table the change came
 	// from, this is the row of the main table to work on.
 	//
-	// What happened is not passed, so the task works from the state the row is in
-	// now: a row that reads as absent is one that was deleted. A row that moved,
-	// such as a sub table row pointing at another main row, is worked on where it
-	// moved to.
-	RunByPrimaryKey(ctx context.Context, table Table, mainPkVal any) error
+	// The change says what happened, but it is mainPkVal that names the row: the
+	// task works on the state the row is in now, so a row that reads as absent is
+	// one that was deleted. A row that moved, such as a sub table row pointing at
+	// another main row, is worked on where it moved to.
+	RunByPrimaryKey(ctx context.Context, table Table, row types.EventRowData, mainPkVal any) error
 
 	// RunByTimeRange Executes the task for the rows whose time column falls in
 	// [start, end).

@@ -176,17 +176,25 @@ The command actions and task configuration type are in
    then starts consuming until the process is canceled or the consumer exits.
 4. The runner matches each event's database and table to the task declarations.
    It reads a main table's `primary_key` or a sub table's `ref_column`, then
-   calls `RunByPrimaryKey` on the matching task or tasks.
+   calls `RunByPrimaryKey` on the matching task or tasks, passing the event's
+   row along with the value.
 5. The manual commands build a runner without a consumer and call
-   `RunByPrimaryKey`, `RunByTimeRange`, or `RunAllByTimeRange` directly.
+   `RunByPrimaryKey`, `RunByTimeRange`, or `RunAllByTimeRange` directly. A row
+   named on the command line has no change behind it, so the task receives an
+   empty `types.EventRowData`.
 
 Tasks implement the [`task.ITask`](../../task/task.go) interface: they declare
 their main and sub tables and implement the primary-key and time-range runs.
+The primary-key run receives the change the run comes from as a
+`types.EventRowData`, so a task can read what happened (`Type`), the values the
+row has now (`Data`), and the ones an update moved away from (`Old`); it is
+empty when the run was asked for by a caller rather than read from a change.
 Implementations should be safe for concurrent use, repeatable when an event is
 delivered again, and should return when their context is canceled so shutdown
 can finish cleanly.
 
 The bundled `task.LogTask` is a demonstration task: it logs which row or range
-was routed to it. It does **not** query the source database or perform business
-work. Implement a task that satisfies `task.ITask` and configure it in the
-task configuration to add application-specific behavior.
+was routed to it, and the change the row came from when there was one. It does
+**not** query the source database or perform business work. Implement a task
+that satisfies `task.ITask` and configure it in the task configuration to add
+application-specific behavior.

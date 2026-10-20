@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/chihqiang/cdc-go/types"
 	"github.com/chihqiang/logx"
 	"github.com/chihqiang/readin"
 	"github.com/stretchr/testify/assert"
@@ -42,7 +43,7 @@ func TestLogTask_WritesTheRowItWasRunFor(t *testing.T) {
 	tk := &LogTask{Main: tableUser}
 	logs := capturedLogs(t)
 
-	assert.NoError(t, tk.RunByPrimaryKey(context.Background(), tableUser, int64(42)))
+	assert.NoError(t, tk.RunByPrimaryKey(context.Background(), tableUser, types.EventRowData{}, int64(42)))
 	assert.Contains(t, logs(), "the row 42 of app.user")
 }
 
@@ -53,9 +54,20 @@ func TestLogTask_WritesTheValueAsItArrived(t *testing.T) {
 
 	for _, mainPkVal := range []any{int64(1), float64(2), "3"} {
 		logs := capturedLogs(t)
-		assert.NoError(t, tk.RunByPrimaryKey(context.Background(), tableUser, mainPkVal))
+		assert.NoError(t, tk.RunByPrimaryKey(context.Background(), tableUser, types.EventRowData{}, mainPkVal))
 		assert.Contains(t, logs(), "the row")
 	}
+}
+
+func TestLogTask_WritesTheChangeItWasRunFor(t *testing.T) {
+	// The row is passed on as it came from the source, so the log can say what
+	// happened as well as which row.
+	tk := &LogTask{Main: tableUser}
+	logs := capturedLogs(t)
+	row := types.EventRowData{Database: "app", Table: "user", Type: types.UpdateEventRowType}
+
+	assert.NoError(t, tk.RunByPrimaryKey(context.Background(), tableUser, row, int64(42)))
+	assert.Contains(t, logs(), "the row 42 of app.user (update)")
 }
 
 func TestLogTask_WritesTheRangeItWasRunFor(t *testing.T) {
@@ -76,7 +88,7 @@ func TestLogTask_RunsThroughTheRunner(t *testing.T) {
 	r := newRunner(t, nil, tk)
 	logs := capturedLogs(t)
 
-	assert.NoError(t, r.RunByPrimaryKey(context.Background(), "app.user_log", int64(7)))
+	assert.NoError(t, r.RunByPrimaryKey(context.Background(), "app.user_log", types.EventRowData{}, int64(7)))
 	assert.Contains(t, logs(), "the row 7 of app.user_log")
 
 	start, end := rangeOf()
@@ -207,7 +219,7 @@ task:
 
 	// A change of the sub table reaches the task the file declared, for the row of
 	// the main table the sub table's user_id names.
-	assert.NoError(t, r.RunByPrimaryKey(context.Background(), "app.user_log", int64(7)))
+	assert.NoError(t, r.RunByPrimaryKey(context.Background(), "app.user_log", types.EventRowData{}, int64(7)))
 	assert.Contains(t, logs(), "the row 7 of app.user_log")
 
 	start, end := rangeOf()
