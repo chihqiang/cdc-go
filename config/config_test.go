@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoad_ValidConfig(t *testing.T) {
@@ -65,6 +66,49 @@ producer:
 	assert.Equal(t, "env-secret-pass", cfg.Source.Mysql.Password)
 }
 
+func TestLoad_ServerID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	content := `store:
+  type: file
+source:
+  type: mysql
+  mysql:
+    server_id: 4321
+producer:
+  type: stdout
+`
+	err := os.WriteFile(path, []byte(content), 0644)
+	assert.NoError(t, err)
+
+	cfg, err := Load(path)
+	assert.NoError(t, err)
+	assert.Equal(t, uint32(4321), cfg.Source.Mysql.ServerID)
+}
+
+func TestLoad_ServerIDFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+
+	t.Setenv("TEST_CDC_SERVER_ID", "2001")
+
+	content := `store:
+  type: file
+source:
+  type: mysql
+  mysql:
+    server_id: "${TEST_CDC_SERVER_ID:-0}"
+producer:
+  type: stdout
+`
+	err := os.WriteFile(path, []byte(content), 0644)
+	assert.NoError(t, err)
+
+	cfg, err := Load(path)
+	assert.NoError(t, err)
+	assert.Equal(t, uint32(2001), cfg.Source.Mysql.ServerID)
+}
+
 func TestLoad_EnvExpansionWithDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
@@ -84,4 +128,18 @@ producer:
 	cfg, err := Load(path)
 	assert.NoError(t, err)
 	assert.Equal(t, "127.0.0.1:3306", cfg.Source.Mysql.Addr)
+}
+
+// TestConfigFileLoads runs the file the repository ships through the loader the
+// program uses, so the documentation that points at it cannot describe a file
+// that stopped parsing.
+func TestConfigFileLoads(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "config.yml"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "file", string(cfg.Store.Type))
+	assert.Equal(t, "mysql", string(cfg.Source.Type))
+	assert.Equal(t, "stdout", string(cfg.Producer.Type))
+	assert.Equal(t, "127.0.0.1:3306", cfg.Source.Mysql.Addr)
+	assert.Equal(t, uint32(0), cfg.Source.Mysql.ServerID)
 }

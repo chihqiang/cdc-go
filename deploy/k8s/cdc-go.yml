@@ -45,6 +45,12 @@ spec:
               value: root
             - name: SOURCE_MYSQL_PASSWORD
               value: '123456'
+            # Replication server id, 0 = random 1001-2000. Set a fixed value
+            # when another replication client (a replica, Maxwell, a second
+            # cdc-go) reads the same MySQL: two clients sharing an id
+            # disconnect each other.
+            - name: SOURCE_MYSQL_SERVER_ID
+              value: '0'
             # ---- offset store ----
             # type=file writes into STORE_FILE_DIR inside the pod, so the offsets
             # are gone on every restart unless that directory gets a volume.
