@@ -428,16 +428,26 @@ docker build -t cdc-go .
 
 ## Kubernetes and local middleware
 
-The repository includes manifests for the application and the supported
-middleware:
+The manifests in [`deploy/k8s`](./deploy/k8s) are applied one by one, so a
+cluster only runs the middleware the configuration actually uses:
 
 ```bash
-# Everything: namespace, middleware StatefulSets and the cdc-go Deployment
-kubectl apply -k deploy/k8s/
+# Namespace shared by every manifest
+kubectl apply -f deploy/k8s/namespace.yml
 
-# Only the application
+# Apply only the middleware you need
+kubectl apply -f deploy/k8s/redis.yml      # store.type=redis or producer.type=redis
+kubectl apply -f deploy/k8s/kafka.yml      # producer.type=kafka
+kubectl apply -f deploy/k8s/rabbitmq.yml   # producer.type=rabbitmq
+kubectl apply -f deploy/k8s/rocketmq.yml   # producer.type=rocketmq
+kubectl apply -f deploy/k8s/pulsar.yml     # producer.type=pulsar
+
+# The application
 kubectl apply -f deploy/k8s/cdc-go.yml
 ```
+
+MySQL is not included in these manifests; point `SOURCE_MYSQL_ADDR` at an
+existing instance.
 
 For local development, [`deploy/compose/services.yml`](./deploy/compose/services.yml)
 brings up MySQL, Redis, Kafka, RabbitMQ, RocketMQ and Pulsar:
