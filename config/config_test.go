@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoad_ValidConfig(t *testing.T) {
@@ -127,4 +128,18 @@ producer:
 	cfg, err := Load(path)
 	assert.NoError(t, err)
 	assert.Equal(t, "127.0.0.1:3306", cfg.Source.Mysql.Addr)
+}
+
+// TestConfigFileLoads runs the file the repository ships through the loader the
+// program uses, so the documentation that points at it cannot describe a file
+// that stopped parsing.
+func TestConfigFileLoads(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "config.yml"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "file", string(cfg.Store.Type))
+	assert.Equal(t, "mysql", string(cfg.Source.Type))
+	assert.Equal(t, "stdout", string(cfg.Producer.Type))
+	assert.Equal(t, "127.0.0.1:3306", cfg.Source.Mysql.Addr)
+	assert.Equal(t, uint32(0), cfg.Source.Mysql.ServerID)
 }

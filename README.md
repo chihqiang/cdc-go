@@ -101,90 +101,18 @@ The configuration file uses YAML format and consists of three main parts: `store
 
 ### Example Configuration
 
-```yaml
-# ==========================================
-# cdc-go Configuration File Example (YAML)
-# ==========================================
-# The full annotated file is available at ./config.yml in the repository root.
+The complete configuration file is [`config.yml`](./config.yml) in the repository root — it is the
+file the container image ships and the only configuration the program reads. Copy it, adjust it and
+run `cdc-go -c config.yml`; every value can also be overridden from the environment (see
+[Environment Variables](#environment-variables)).
 
-# ---------- Offset Storage Configuration ----------
-store:
-  type: "${STORE_TYPE:-file}"              # Storage type: file / redis
+It has three top-level sections, each with its own block in the file:
 
-  file:
-    dir: "${STORE_FILE_DIR:-runtime}"      # Directory for storing offset files
-
-  redis:
-    addr: "${STORE_REDIS_ADDR:-127.0.0.1:6379}"   # Redis address
-    password: "${STORE_REDIS_PASSWORD:-}"         # Redis password (leave empty if none)
-    db: "${STORE_REDIS_DB:-0}"                    # Redis database number (default 0)
-
-# ---------- Data Source Configuration ----------
-source:
-  type: "${SOURCE_TYPE:-mysql}"            # Data source type: mysql
-
-  mysql:
-    addr: "${SOURCE_MYSQL_ADDR:-127.0.0.1:3306}"  # Database address (host:port)
-    user: "${SOURCE_MYSQL_USER:-root}"            # Database username (recommended to use a dedicated account in production)
-    password: "${SOURCE_MYSQL_PASSWORD:-123456}"  # Database password
-    server_id: "${SOURCE_MYSQL_SERVER_ID:-0}"     # Replication server id (0 = random 1001-2000; must be unique per client)
-    exclude_table_regex:              # Tables to exclude (regex patterns)
-      - "mysql.*"
-      - "information_schema.*"
-      - "performance_schema.*"
-      - "sys.*"
-    include_table_regex:              # Tables to include (regex patterns, empty = all except excluded)
-      # - "cdcgo.*"              # Example: only listen to cdcgo tables
-
-# ---------- Producer Configuration ----------
-producer:
-  type: "${PRODUCER_TYPE:-stdout}"       # Producer type: stdout / kafka / redis / rabbitmq / rocketmq / pulsar
-
-  # Kafka settings
-  kafka:
-    brokers:
-      - "${PRODUCER_KAFKA_BROKERS:-127.0.0.1:9092}"  # Kafka broker list
-    topic: "${PRODUCER_KAFKA_TOPIC:-cdc-go-events}"  # Kafka topic name
-
-  # RabbitMQ settings
-  rabbitmq:
-    url: "${PRODUCER_RABBITMQ_URL:-amqp://guest:guest@127.0.0.1:5672/}" # RabbitMQ connection URL
-    exchange: "${PRODUCER_RABBITMQ_EXCHANGE:-cdc-go-exchange}" # Exchange name (declared and bound on startup)
-    exchange_type: "${PRODUCER_RABBITMQ_EXCHANGE_TYPE:-direct}"     # Exchange type: direct / fanout / topic (headers is refused)
-    routing_key: "${PRODUCER_RABBITMQ_ROUTING_KEY:-cdc-go-events}" # Publish key, and the key the queue is bound with
-    queue: "${PRODUCER_RABBITMQ_QUEUE:-cdc-go-events}"      # Queue name
-    durable: true              # Whether the queue should survive server restarts (also makes messages persistent)
-    auto_delete: false         # Whether the queue should auto-delete when unused
-    auto_ack: false            # Whether to auto-acknowledge messages (unused when publishing)
-    exclusive: false           # Whether the queue is exclusive to this connection
-    no_wait: false             # Whether to wait for the server to confirm queue declaration
-
-  # Redis settings
-  redis:
-    addr: "${PRODUCER_REDIS_ADDR:-127.0.0.1:6379}"        # Redis address
-    password: "${PRODUCER_REDIS_PASSWORD:-}"              # Redis password
-    db: "${PRODUCER_REDIS_DB:-0}"                         # Redis database number
-    key: "${PRODUCER_REDIS_KEY:-cdc-go-events}"      # Redis key for storing events
-
-  # RocketMQ settings
-  rocketmq:
-    servers:
-      - "${PRODUCER_ROCKETMQ_SERVERS:-127.0.0.1:9876}"  # RocketMQ NameServer address
-    topic: "${PRODUCER_ROCKETMQ_TOPIC:-cdc-go-events}"  # RocketMQ topic name
-    group: "${PRODUCER_ROCKETMQ_GROUP:-cdc-go-group}"   # Producer group name
-    namespace: "${PRODUCER_ROCKETMQ_NAMESPACE:-}"        # Namespace
-    access_key: "${PRODUCER_ROCKETMQ_ACCESS_KEY:-}"      # Access key
-    secret_key: "${PRODUCER_ROCKETMQ_SECRET_KEY:-}"      # Secret key
-    retry: 3                   # Retry count on failure
-
-  # Pulsar settings
-  pulsar:
-    url: "${PRODUCER_PULSAR_URL:-pulsar://127.0.0.1:6650}"  # Pulsar broker URL
-    topic: "${PRODUCER_PULSAR_TOPIC:-cdc-go-events}"   # Pulsar topic name
-    token: "${PRODUCER_PULSAR_TOKEN:-}"        # Optional authentication token
-    operation_timeout: 30           # Operation timeout in seconds
-    connection_timeout: 30          # Connection timeout in seconds
-```
+| Section | What it configures |
+| --- | --- |
+| `store` | Where the binlog offset is kept: `file` (a directory) or `redis` |
+| `source` | `mysql`: `addr`, `user`, `password`, `server_id`, and the `exclude_table_regex` / `include_table_regex` table filters |
+| `producer` | Where the events go: `stdout`, `kafka`, `redis`, `rabbitmq`, `rocketmq` or `pulsar` — `type` picks the block that is read |
 
 ### Environment Variables
 
