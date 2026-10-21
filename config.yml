@@ -38,6 +38,10 @@ source:
     # for a single consumer. Give every replication client of this MySQL instance
     # (a replica, Maxwell, another cdc-go) its own id: when two connect with the
     # same id, MySQL drops the older connection.
+    # The ids already in use are visible on MySQL: SHOW REPLICAS (SHOW SLAVE
+    # HOSTS before 8.0.22) lists the registered replicas, SHOW PROCESSLIST the
+    # dump threads connected right now -- see "Selecting a replication server
+    # id" in the README.
     server_id: "${SOURCE_MYSQL_SERVER_ID:-0}"
     exclude_table_regex:              # Tables to exclude (regex patterns)
       - "mysql.*"

@@ -217,7 +217,8 @@ The environment variables the bundled `config.yml` reads are `STORE_TYPE`, `STOR
    - Every replication client reading this server needs its own replication server id. cdc-go reports a
      random id in 1001-2000 unless `source.mysql.server_id` is set; when another client (a replica,
      Maxwell, a second cdc-go) uses the same id, MySQL drops the older connection and the two reconnect
-     in a loop.
+     in a loop. See [Selecting a replication server id](#selecting-a-replication-server-id) for the
+     ids already in use.
 2. **Permission Requirements**: When using MySQL data source, ensure the database user has sufficient permissions:
 
 ```sql
@@ -233,3 +234,26 @@ GRANT SELECT ON *.* TO 'cdcgo'@'%';
 -- Refresh permissions
 FLUSH PRIVILEGES;
 ```
+
+### Selecting a replication server id
+
+Two replication clients that connect with one `server_id` disconnect each other, so the id cdc-go
+uses has to be free. MySQL shows what it knows:
+
+```sql
+-- Replicas that register themselves (they must run with report_host set).
+-- MySQL 8.0.22+; older versions: SHOW SLAVE HOSTS;
+SHOW REPLICAS;
+
+-- The id of each server you know of, run on that server
+SELECT @@server_id;
+
+-- Everything connected right now: one binlog dump thread per replication
+-- client, whether or not it is listed above.
+SHOW PROCESSLIST;   -- Command = 'Binlog Dump' or 'Binlog Dump GTID'
+```
+
+`SHOW REPLICAS` lists the ids of the real replicas only: canal, Maxwell and cdc-go do not register
+themselves, so their dump threads are only visible — and only countable — in `SHOW PROCESSLIST`.
+MySQL does not expose the id of a connected dump thread, so keep the id given to each consumer
+(Maxwell's `server_id`, `source.mysql.server_id` here) and pick one that appears in neither query.
