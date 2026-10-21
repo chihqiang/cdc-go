@@ -1,8 +1,12 @@
 # cdc-go-task
 
-`cdc-go-task` consumes CDC events published by `cdc-go` and routes
-each event to the configured tasks that watch its database table. It can also
-run those tasks directly for a primary-key value or a time range.
+`cdc-go-task` is a reference consumer for the events published by `cdc-go`. It
+reads each event from the configured middleware and routes it to the tasks that
+watch its database table; the bundled `LogTask` only logs it. It can also run
+those tasks directly for a primary-key value or a time range.
+
+Use it to verify that a pipeline is wired correctly, and as a starting point for
+your own consumer. It is not a production feature.
 
 The two commands have different jobs:
 

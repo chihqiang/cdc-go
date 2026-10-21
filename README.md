@@ -14,7 +14,7 @@ The repository ships two binaries:
 | Binary | Purpose |
 | --- | --- |
 | `cdc-go` | Reads MySQL binlogs and publishes change events. |
-| [`cdc-go-task`](./cmd/cdc-go-task/README.md) | Consumes those events and runs the tasks that watch each table. |
+| [`cdc-go-task`](./cmd/cdc-go-task/README.md) | Reference consumer: reads events and logs them, showing how to consume the stream. |
 
 ## How it works
 
@@ -29,8 +29,8 @@ MySQL binlog ──> cdc-go ──> middleware ──> cdc-go-task ──> tasks
    [Event format](#event-format)).
 3. The event is sent to the configured producer: stdout, Redis, Kafka,
    RabbitMQ, RocketMQ or Pulsar.
-4. `cdc-go-task` reads the same middleware and routes each event to the tasks
-   watching its `database.table`.
+4. `cdc-go-task` is a reference consumer: it reads the same middleware and logs
+   each event, showing how to consume the stream from your own application.
 
 ## Features
 
@@ -44,8 +44,8 @@ MySQL binlog ──> cdc-go ──> middleware ──> cdc-go-task ──> tasks
   of dropping events.
 - **Graceful shutdown** — `SIGINT`/`SIGTERM` stop the source, flush the current
   position and close resources cleanly.
-- **Task runner** — `cdc-go-task` fans events out to application tasks, and can
-  replay a row, a time range or the whole configuration.
+- **Reference consumer** — `cdc-go-task` shows how to read events and route them
+  to tasks; the bundled `LogTask` only logs them.
 - **One configuration file** — each binary reads a single YAML file, with
   `${VAR}` / `${VAR:-fallback}` substitution for per-environment values.
 
@@ -56,7 +56,7 @@ MySQL binlog ──> cdc-go ──> middleware ──> cdc-go-task ──> tasks
 | Data source | MySQL |
 | Offset store | File, Redis |
 | Producer (`cdc-go`) | `stdout`, Redis, Kafka, RabbitMQ, RocketMQ, Pulsar |
-| Consumer (`cdc-go-task`) | Redis, Kafka, RabbitMQ, RocketMQ, Pulsar |
+| Consumer (`cdc-go-task`, reference) | Redis, Kafka, RabbitMQ, RocketMQ, Pulsar |
 
 ## Requirements
 
@@ -460,12 +460,16 @@ docker compose -f deploy/compose/services.yml up -d
 > store. If the pod is recreated, mount a volume for `STORE_FILE_DIR` or switch
 > `store.type` to `redis` to keep the position.
 
-## Consuming events with `cdc-go-task`
+## Reference consumer: `cdc-go-task`
 
-`cdc-go-task` consumes the events published by `cdc-go` and routes each one to
-the tasks watching its table. It is configured separately by
-[`config.task.yml`](./config.task.yml), which must point at the same middleware
-destination as the publisher (for example, the same Kafka brokers and topic).
+`cdc-go-task` is a **test consumer**, not a production feature. It reads the
+events published by `cdc-go` from the same middleware and logs each one through
+the bundled `LogTask`. It serves as a reference for how to consume the stream
+and as a starting point for your own consumer.
+
+It is configured separately by [`config.task.yml`](./config.task.yml), which
+must point at the same middleware destination as the publisher (for example, the
+same Kafka brokers and topic).
 
 ```bash
 make build-task
@@ -476,10 +480,10 @@ Available commands:
 
 | Command | Description |
 | --- | --- |
-| `run` | Continuously consume events and run the matching tasks. This is the default command. |
-| `run-by-pk <db.table> <pk>` | Run the tasks watching a table for one main-table row. |
-| `run-by-range <db.table> <start> <end>` | Run the tasks for rows in a half-open time range. |
-| `run-all-by-range <start> <end>` | Run every configured task over every watched table for a time range. |
+| `run` | Continuously consume events and route them to the configured tasks, which log them. This is the default command. |
+| `run-by-pk <db.table> <pk>` | Route one main-table row to the tasks watching that table. |
+| `run-by-range <db.table> <start> <end>` | Route rows in a half-open time range to the matching tasks. |
+| `run-all-by-range <start> <end>` | Route every watched table to its task for a time range. |
 
 ```bash
 # One row
@@ -495,7 +499,8 @@ Available commands:
 ```
 
 See [`cmd/cdc-go-task/README.md`](./cmd/cdc-go-task/README.md) for the task
-configuration, routing rules and the `task.ITask` interface.
+configuration, routing rules and the `task.ITask` interface to implement in a
+real consumer.
 
 ## MySQL setup
 
@@ -553,7 +558,7 @@ the id assigned to each consumer and pick one that appears in neither query.
 
 ```bash
 make build        # build ./cdc-go
-make build-task   # build ./cdc-go-task
+make build-task   # build the reference consumer ./cdc-go-task
 make build-all    # build both binaries
 make test         # go test -race -cover over ./... (also fails on a dirty working tree)
 make check        # golangci-lint, errcheck, go fmt and go mod tidy
@@ -564,22 +569,6 @@ Run a focused test directly with the Go toolchain:
 ```bash
 go test ./task/... ./store/...
 ```
-
-### Project layout
-
-| Path | Contents |
-| --- | --- |
-| [`cmd/cdc-go`](./cmd/cdc-go) | Publisher entry point. |
-| [`cmd/cdc-go-task`](./cmd/cdc-go-task) | Consumer/task entry point and its documentation. |
-| [`cmd`](./cmd) | Shared CLI wiring for both binaries. |
-| [`config`](./config) | Configuration loading and environment expansion. |
-| [`source`](./source) | Data sources; MySQL binlog implementation. |
-| [`store`](./store) | Offset stores: file and Redis. |
-| [`queue/producer`](./queue/producer) | Event producers for each middleware. |
-| [`queue/consumer`](./queue/consumer) | Event consumers for `cdc-go-task`. |
-| [`task`](./task) | Task runner, routing and the `ITask` interface. |
-| [`types`](./types) | Event and primary-key types. |
-| [`deploy`](./deploy) | Kubernetes manifests and Docker Compose services. |
 
 ## License
 
