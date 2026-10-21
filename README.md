@@ -217,7 +217,12 @@ Producer: PRODUCER_TYPE,
 
 ## Event format
 
-Each change is published as one JSON document:
+Each change is published as one JSON document. `row.type` selects one of three
+shapes.
+
+### Insert
+
+`data` holds the inserted row; `old` is omitted.
 
 ```json
 {
@@ -228,12 +233,38 @@ Each change is published as one JSON document:
     "time": 1792549800,
     "database": "app",
     "table": "user",
-    "type": "update",
+    "type": "insert",
     "data": {
       "id": 42,
       "name": "Alice",
       "active": 1,
       "balance": "12.34",
+      "created_at": "2026-10-21 10:29:58"
+    }
+  }
+}
+```
+
+### Update
+
+`data` holds the row after the change and `old` holds the row before it.
+`old` contains the whole row, not only the columns that changed.
+
+```json
+{
+  "time": "2026-10-21T10:31:15.482917+08:00",
+  "server_id": 1,
+  "pos": 194512512,
+  "row": {
+    "time": 1792549875,
+    "database": "app",
+    "table": "user",
+    "type": "update",
+    "data": {
+      "id": 42,
+      "name": "Alice",
+      "active": 1,
+      "balance": "20.00",
       "created_at": "2026-10-21 10:29:58"
     },
     "old": {
@@ -246,6 +277,33 @@ Each change is published as one JSON document:
   }
 }
 ```
+
+### Delete
+
+`data` holds the row that was deleted; `old` is omitted.
+
+```json
+{
+  "time": "2026-10-21T10:32:40.104553+08:00",
+  "server_id": 1,
+  "pos": 194512789,
+  "row": {
+    "time": 1792549960,
+    "database": "app",
+    "table": "user",
+    "type": "delete",
+    "data": {
+      "id": 42,
+      "name": "Alice",
+      "active": 1,
+      "balance": "20.00",
+      "created_at": "2026-10-21 10:29:58"
+    }
+  }
+}
+```
+
+### Fields
 
 | Field | Description |
 | --- | --- |
