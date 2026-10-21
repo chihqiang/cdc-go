@@ -1,124 +1,126 @@
-<div align="center">
-<h1>cdc-go</h1>
+# cdc-go
 
-<p>
- cdc-go is an efficient Go-based Change Data Capture (CDC) tool that real-time monitors database changes, parses and processes events, and sends them to message queues or other downstream systems.
-</p>
+![Go 1.25+](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white)
+![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)
 
-</div>
+A lightweight Change Data Capture (CDC) service for MySQL, written in Go. It
+tails the MySQL binary log, converts every row change into one stable JSON
+format, and publishes it to the middleware you choose. The binlog position is
+stored in a file or Redis, so a restart resumes where it stopped instead of
+replaying the log.
 
-## Project Overview
+The repository ships two binaries:
+
+| Binary | Purpose |
+| --- | --- |
+| `cdc-go` | Reads MySQL binlogs and publishes change events. |
+| [`cdc-go-task`](./cmd/cdc-go-task/README.md) | Consumes those events and runs the tasks that watch each table. |
+
+## How it works
+
+```text
+MySQL binlog ──> cdc-go ──> middleware ──> cdc-go-task ──> tasks
+                            (Kafka, Redis,
+                             RabbitMQ, ...)
+```
+
+1. `cdc-go` connects to MySQL as a replication client and reads the binlog.
+2. Every row change becomes a `types.EventData` event (see
+   [Event format](#event-format)).
+3. The event is sent to the configured producer: stdout, Redis, Kafka,
+   RabbitMQ, RocketMQ or Pulsar.
+4. `cdc-go-task` reads the same middleware and routes each event to the tasks
+   watching its `database.table`.
 
 ## Features
 
-- **Real-time Capture**: Monitor database change events in real-time through binlog parsing
-- **Unified Event Format**: Convert changes from different databases into a consistent JSON format
-- **Multiple Producer Support**: Send events to various downstream systems including stdout, Redis, Kafka, RabbitMQ, RocketMQ, and Pulsar
-- **Checkpoint Resumption**: Store synchronization positions to achieve breakpoint resumption
-- **Extensible Architecture**: Easy to extend with new data sources and producer types
-- **Worker Pool Processing**: Process events efficiently with worker goroutines
-- **Graceful Shutdown**: Properly handle context cancellation and resource cleanup
-- **Single Source Configuration**: One YAML file per deployment, with `${VAR}` / `${VAR:-fallback}` environment substitution inside it
+- **Real-time capture** — row-level changes are read from the MySQL binlog.
+- **Unified event format** — every source produces the same JSON structure.
+- **Multiple producers** — stdout, Redis, Kafka, RabbitMQ, RocketMQ and Pulsar.
+- **Checkpoint resume** — the binlog position is persisted in a file or Redis.
+- **Table filtering** — include and exclude tables with regular expressions.
+- **Reliable publishing** — failed sends are retried with exponential backoff.
+- **Backpressure by design** — a slow producer slows the binlog reader instead
+  of dropping events.
+- **Graceful shutdown** — `SIGINT`/`SIGTERM` stop the source, flush the current
+  position and close resources cleanly.
+- **Task runner** — `cdc-go-task` fans events out to application tasks, and can
+  replay a row, a time range or the whole configuration.
+- **One configuration file** — each binary reads a single YAML file, with
+  `${VAR}` / `${VAR:-fallback}` substitution for per-environment values.
 
-## Supported Components
+## Supported components
 
-### Data Sources
+| Role | Options |
+| --- | --- |
+| Data source | MySQL |
+| Offset store | File, Redis |
+| Producer (`cdc-go`) | `stdout`, Redis, Kafka, RabbitMQ, RocketMQ, Pulsar |
+| Consumer (`cdc-go-task`) | Redis, Kafka, RabbitMQ, RocketMQ, Pulsar |
 
-- MySQL (via binlog parsing)
+## Requirements
 
-### Producers
+- **Go 1.25+** to build from source.
+- A **MySQL** server with binary logging enabled and a user allowed to read the
+  binlog (see [MySQL setup](#mysql-setup)).
+- Optional: the middleware you publish to, plus Redis if the offset store is
+  configured as `redis`.
 
-- Standard Output (stdout)
-- [Redis](https://redis.io/)
-- [Kafka](https://kafka.apache.org/)
-- [RabbitMQ](https://www.rabbitmq.com/)
-- [RocketMQ](https://rocketmq.apache.org/)
-- [Pulsar](https://pulsar.apache.org/)
+## Quick start
 
-### Storage
+### Build from source
 
-- File Storage
-- Redis Storage
+```bash
+git clone https://github.com/chihqiang/cdc-go.git
+cd cdc-go
 
-## Quick Start
+make build          # builds ./cdc-go
+make build-task     # builds ./cdc-go-task
+make build-all      # builds both
+```
 
-### Prerequisites
-
-- Go 1.23+ environment
-- MySQL server with binary logging enabled
-- Correct database access permissions (MySQL user needs binlog read permissions)
-- If using other producer components, ensure corresponding services are available
-
-### Installation
-
-### Prerequisites
-
-- Go **1.23+** (latest version recommended)
-- `$GOPATH/bin` added to your `$PATH`
-
-### Option 1: Install via `go install` (Recommended)
-
-This is the simplest and recommended way to install **cdc-go**:
+To install the publisher through the Go toolchain instead:
 
 ```bash
 go install github.com/chihqiang/cdc-go/cmd/cdc-go@latest
 ```
 
-### Option 2: Build from Source
+### Configure
 
-If you want to modify the source code or contribute to development, build from source:
-
-```bash
-# Clone the repository
-git clone https://github.com/chihqiang/cdc-go.git
-cd cdc-go && make build
-cp ./cdc-go /usr/local/bin/
-```
-
-### Usage Example
-
-1. Create configuration file `config.yml`: (see Configuration File Description section for details)
-
-2. Run the program:
+Copy the shipped example and adjust the values for your environment:
 
 ```bash
-# Using the default config.yml
-cdc-go
-# Using a specific config file
-cdc-go -c path/to/config.yml
-# Explicitly using the listen command
-cdc-go listen -c path/to/config.yml
+cp config.yml config.local.yml
 ```
 
-> The configuration file is required: the file is the only source of configuration, and starting
-> without a readable file fails with an error. Values that differ per environment are not passed as
-> environment variables directly, but referenced from inside the file — see
-> [Environment Variables](#environment-variables).
+The file is the only source of configuration; starting without a readable file
+fails. Use `-c` / `--config` to select a file (default: `config.yml`):
 
-## Configuration File Description
+```bash
+./cdc-go -c config.local.yml
+# `listen` is the same action, and can be given explicitly:
+./cdc-go listen -c config.local.yml
+```
 
-The configuration file uses YAML format and consists of three main parts: `store` (offset storage), `source` (data source), and `producer` (producer destination).
+With the default `stdout` producer, captured changes are printed as indented
+JSON. Point `producer.type` at a middleware to publish them elsewhere.
 
-### Example Configuration
+## Configuration
 
-The complete configuration file is [`config.yml`](./config.yml) in the repository root — it is the
-file the container image ships and the only configuration the program reads. Copy it, adjust it and
-run `cdc-go -c config.yml`; every value can also be overridden from the environment (see
-[Environment Variables](#environment-variables)).
+The publisher reads one YAML file made of three sections:
 
-It has three top-level sections, each with its own block in the file:
-
-| Section | What it configures |
+| Section | Purpose |
 | --- | --- |
-| `store` | Where the binlog offset is kept: `file` (a directory) or `redis` |
-| `source` | `mysql`: `addr`, `user`, `password`, `server_id`, and the `exclude_table_regex` / `include_table_regex` table filters |
-| `producer` | Where the events go: `stdout`, `kafka`, `redis`, `rabbitmq`, `rocketmq` or `pulsar` — `type` picks the block that is read |
+| `store` | Where the binlog offset is persisted: `file` or `redis`. |
+| `source` | Where changes are read from: currently `mysql`. |
+| `producer` | Where events are sent: `stdout`, `redis`, `kafka`, `rabbitmq`, `rocketmq` or `pulsar`. |
 
-### Environment Variables
+The complete example is [`config.yml`](./config.yml). Only the block selected
+by each `type` field is used.
 
-The file is the only source of configuration — there is no environment variable fallback for the
-settings themselves. Environment variables are referenced **from inside the file** with `${VAR}`
-or `${VAR:-fallback}`, which is how one file serves a laptop, a container and Kubernetes:
+### Environment substitution
+
+Values in the file can reference environment variables:
 
 ```yaml
 source:
@@ -134,126 +136,380 @@ SOURCE_MYSQL_ADDR=mysql:3306 SOURCE_MYSQL_PASSWORD=secret ./cdc-go -c config.yml
 
 | Syntax | Meaning |
 | --- | --- |
-| `${VAR}` | The value of `VAR`, or an empty string when it is unset |
-| `${VAR:-fallback}` | The value of `VAR`, or `fallback` when `VAR` is unset or empty |
-| `$$` | An escaped `$` (use it for a literal `${...}`) |
+| `${VAR}` | The value of `VAR`, or an empty string when it is unset. |
+| `${VAR:-fallback}` | The value of `VAR`, or `fallback` when `VAR` is unset or empty. |
+| `$$` | An escaped `$`. |
 
-A key that is missing from the file falls back to the default written in the tag (`default=`), and a
-key that is required but missing from both the file and the defaults fails at startup with the field
-path in the error.
+A missing key falls back to the default declared in the code. A required key
+missing from both the file and the defaults fails at startup with the field path
+in the error.
 
-> **Note:** Expansion only ever fills a string or a key, so a value that should be a list — e.g.
-> `exclude_table_regex` — has to be written as a list in the file; it cannot be passed as a
-> comma-separated environment variable.
+> Expansion only fills a string or a key. A list value such as
+> `exclude_table_regex` must be written as a list in the file; it cannot be
+> supplied through a comma-separated environment variable.
 
-## Docker Deployment
+### `store`
 
-You can use Docker to run cdc-go in containerized environments. Here's how to build and run cdc-go with Docker:
+| Key | Default | Description |
+| --- | --- | --- |
+| `type` | required | `file` or `redis`. |
+| `file.dir` | `runtime` | Directory the offset file is written to. |
+| `redis.addr` | `127.0.0.1:6379` | Redis address. |
+| `redis.password` | empty | Redis password. |
+| `redis.db` | `0` | Redis database number. |
 
-The image ships `/app/config.yml` (the file from the repository root) and is started with
-`cdc-go -c /app/config.yml`. Every `-e` below fills a `${VAR:-fallback}` reference in that file,
-so the same image can be pointed at another database, storage or producer without a rebuild:
+The file store writes atomically (temporary file + rename), so a crash cannot
+leave a half-written position. Use Redis when several processes or pods must
+share a position, or when the local filesystem is ephemeral.
 
-> The image is published to both Docker Hub (`zhiqiangwang/app:cdc-go`) and Aliyun Container
-> Registry (`registry.cn-hangzhou.aliyuncs.com/buildx/app:cdc-go`). The examples below use the
-> Docker Hub tag; substitute the Aliyun tag if that registry is closer to you.
+### `source`
 
-```bash
-# =========================
-# 1️⃣ MySQL only (read from MySQL)
-# =========================
-docker run -it --rm \
-    --name cdc-go \
-    -e SOURCE_MYSQL_ADDR="127.0.0.1:3306" \
-    -e SOURCE_MYSQL_USER="root" \
-    -e SOURCE_MYSQL_PASSWORD="123456" \
-    zhiqiangwang/app:cdc-go
+| Key | Default | Description |
+| --- | --- | --- |
+| `type` | required | `mysql`. |
+| `mysql.addr` | `127.0.0.1:3306` | MySQL address (`host:port`). |
+| `mysql.user` | `root` | MySQL user. |
+| `mysql.password` | — | MySQL password. Prefer a secret from the environment. |
+| `mysql.server_id` | `0` | Replication server id. `0` picks a random id in 1001–2000. |
+| `mysql.exclude_table_regex` | system schemas (see example) | Tables to skip. |
+| `mysql.include_table_regex` | empty (all) | When non-empty, only matching tables are captured. |
 
-# =========================
-# 2️⃣ MySQL → Redis & Redis
-# =========================
-docker run -it --rm \
-    --name cdc-go \
-    -e SOURCE_MYSQL_ADDR="127.0.0.1:3306" \
-    -e SOURCE_MYSQL_USER="root" \
-    -e SOURCE_MYSQL_PASSWORD="123456" \
-    -e STORE_TYPE="redis" \
-    -e STORE_REDIS_ADDR="127.0.0.1:6379" \
-    -e STORE_REDIS_PASSWORD="123456" \
-    -e STORE_REDIS_DB="1" \
-    -e PRODUCER_TYPE="redis" \
-    -e PRODUCER_REDIS_ADDR="127.0.0.1:6379" \
-    -e PRODUCER_REDIS_PASSWORD="123456" \
-    -e PRODUCER_REDIS_DB="1" \
-    -e PRODUCER_REDIS_KEY="cdc-go-events" \
-    zhiqiangwang/app:cdc-go
+Filtering order:
+
+1. Tables matching `exclude_table_regex` are skipped.
+2. If `include_table_regex` is not empty, only matching tables are kept.
+3. With neither configured, every table is captured.
+
+### `producer`
+
+| `type` | Keys |
+| --- | --- |
+| `stdout` | None. Prints indented JSON. |
+| `redis` | `addr`, `password`, `db`, `key` (list key, default `cdc-go-events`). |
+| `kafka` | `brokers` (default `127.0.0.1:9092`), `topic` (default `cdc-go-events`). |
+| `rabbitmq` | `url`, `exchange`, `exchange_type` (`direct`/`fanout`/`topic`), `routing_key`, `queue`, `durable`, `auto_delete`, `auto_ack`, `exclusive`, `no_wait`. |
+| `rocketmq` | `servers`, `topic`, `group`, `namespace`, `access_key`, `secret_key`, `retry`. |
+| `pulsar` | `url`, `topic`, `token`, `operation_timeout`, `connection_timeout`. |
+
+The RabbitMQ producer declares the exchange and queue, and binds the queue with
+`routing_key` on startup. The Redis producer pushes each event with `LPUSH` onto
+the configured list, so the consumer reads with `BRPOP`.
+
+### Environment variables read by the example file
+
+```text
+Store:    STORE_TYPE, STORE_FILE_DIR, STORE_REDIS_ADDR, STORE_REDIS_PASSWORD,
+          STORE_REDIS_DB
+Source:   SOURCE_TYPE, SOURCE_MYSQL_ADDR, SOURCE_MYSQL_USER,
+          SOURCE_MYSQL_PASSWORD, SOURCE_MYSQL_SERVER_ID
+Producer: PRODUCER_TYPE,
+          PRODUCER_KAFKA_BROKERS, PRODUCER_KAFKA_TOPIC,
+          PRODUCER_RABBITMQ_URL, PRODUCER_RABBITMQ_EXCHANGE,
+          PRODUCER_RABBITMQ_EXCHANGE_TYPE, PRODUCER_RABBITMQ_ROUTING_KEY,
+          PRODUCER_RABBITMQ_QUEUE,
+          PRODUCER_REDIS_ADDR, PRODUCER_REDIS_PASSWORD, PRODUCER_REDIS_DB,
+          PRODUCER_REDIS_KEY,
+          PRODUCER_ROCKETMQ_SERVERS, PRODUCER_ROCKETMQ_TOPIC,
+          PRODUCER_ROCKETMQ_GROUP, PRODUCER_ROCKETMQ_NAMESPACE,
+          PRODUCER_ROCKETMQ_ACCESS_KEY, PRODUCER_ROCKETMQ_SECRET_KEY,
+          PRODUCER_PULSAR_URL, PRODUCER_PULSAR_TOPIC, PRODUCER_PULSAR_TOKEN
 ```
 
-To use your own configuration file instead, mount it over the bundled one:
+## Event format
+
+Each change is published as one JSON document:
+
+```json
+{
+  "time": "2026-10-21T10:30:00.123456789+08:00",
+  "server_id": 1,
+  "pos": 194512345,
+  "row": {
+    "time": 1761004200,
+    "database": "app",
+    "table": "user",
+    "type": "update",
+    "data": {
+      "id": 42,
+      "name": "Alice",
+      "active": true,
+      "created_at": "2026-10-21T10:29:58+08:00"
+    },
+    "old": {
+      "id": 42,
+      "name": "alice",
+      "active": true,
+      "created_at": "2026-10-21T10:29:58+08:00"
+    }
+  }
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `time` | When `cdc-go` captured the event. |
+| `server_id` | MySQL server id from the binlog header. |
+| `pos` | Binlog position of the event. |
+| `row.time` | Binlog event timestamp reported by MySQL. |
+| `row.database` / `row.table` | Source table. |
+| `row.type` | `insert`, `update` or `delete`. |
+| `row.data` | Row values after the change; for a delete, the deleted row. |
+| `row.old` | Row values before an update. Omitted for inserts and deletes. |
+
+Values are converted to natural JSON types: integers and decimals become
+numbers, `BIT` becomes a boolean, date/time values are emitted as strings, and
+text/binary columns become strings. Every binlog position is persisted after it
+has been handled, which is what makes resumption possible.
+
+## Docker
+
+The image is published to Docker Hub and Aliyun Container Registry:
+
+- `zhiqiangwang/app:cdc-go`
+- `registry.cn-hangzhou.aliyuncs.com/buildx/app:cdc-go`
+
+It ships `/app/config.yml` and starts with `cdc-go -c /app/config.yml`. Every
+`-e` below fills a `${VAR:-fallback}` reference in that file, so the same image
+can target another database or middleware without a rebuild.
+
+```bash
+# MySQL -> stdout
+docker run -it --rm \
+  --name cdc-go \
+  -e SOURCE_MYSQL_ADDR="127.0.0.1:3306" \
+  -e SOURCE_MYSQL_USER="root" \
+  -e SOURCE_MYSQL_PASSWORD="123456" \
+  zhiqiangwang/app:cdc-go
+
+# MySQL -> Redis, with the offset stored in Redis as well
+docker run -it --rm \
+  --name cdc-go \
+  -e SOURCE_MYSQL_ADDR="127.0.0.1:3306" \
+  -e SOURCE_MYSQL_USER="root" \
+  -e SOURCE_MYSQL_PASSWORD="123456" \
+  -e STORE_TYPE="redis" \
+  -e STORE_REDIS_ADDR="127.0.0.1:6379" \
+  -e PRODUCER_TYPE="redis" \
+  -e PRODUCER_REDIS_ADDR="127.0.0.1:6379" \
+  -e PRODUCER_REDIS_KEY="cdc-go-events" \
+  zhiqiangwang/app:cdc-go
+
+# MySQL -> Kafka, with the offset stored in Redis
+docker run -it --rm \
+  --name cdc-go \
+  -e SOURCE_MYSQL_ADDR="127.0.0.1:3306" \
+  -e SOURCE_MYSQL_USER="root" \
+  -e SOURCE_MYSQL_PASSWORD="123456" \
+  -e STORE_TYPE="redis" \
+  -e STORE_REDIS_ADDR="127.0.0.1:6379" \
+  -e PRODUCER_TYPE="kafka" \
+  -e PRODUCER_KAFKA_BROKERS="127.0.0.1:9092" \
+  -e PRODUCER_KAFKA_TOPIC="cdc-go-events" \
+  zhiqiangwang/app:cdc-go
+
+# MySQL -> RabbitMQ, with the offset stored in Redis
+docker run -it --rm \
+  --name cdc-go \
+  -e SOURCE_MYSQL_ADDR="127.0.0.1:3306" \
+  -e SOURCE_MYSQL_USER="root" \
+  -e SOURCE_MYSQL_PASSWORD="123456" \
+  -e STORE_TYPE="redis" \
+  -e STORE_REDIS_ADDR="127.0.0.1:6379" \
+  -e PRODUCER_TYPE="rabbitmq" \
+  -e PRODUCER_RABBITMQ_URL="amqp://guest:guest@127.0.0.1:5672/" \
+  -e PRODUCER_RABBITMQ_EXCHANGE="cdc-go-exchange" \
+  -e PRODUCER_RABBITMQ_ROUTING_KEY="cdc-go-events" \
+  -e PRODUCER_RABBITMQ_QUEUE="cdc-go-events" \
+  zhiqiangwang/app:cdc-go
+
+# MySQL -> RocketMQ, with the offset stored in Redis
+docker run -it --rm \
+  --name cdc-go \
+  -e SOURCE_MYSQL_ADDR="127.0.0.1:3306" \
+  -e SOURCE_MYSQL_USER="root" \
+  -e SOURCE_MYSQL_PASSWORD="123456" \
+  -e STORE_TYPE="redis" \
+  -e STORE_REDIS_ADDR="127.0.0.1:6379" \
+  -e PRODUCER_TYPE="rocketmq" \
+  -e PRODUCER_ROCKETMQ_SERVERS="127.0.0.1:9876" \
+  -e PRODUCER_ROCKETMQ_TOPIC="cdc-go-events" \
+  -e PRODUCER_ROCKETMQ_GROUP="cdc-go-group" \
+  zhiqiangwang/app:cdc-go
+
+# MySQL -> Pulsar, with the offset stored in Redis
+docker run -it --rm \
+  --name cdc-go \
+  -e SOURCE_MYSQL_ADDR="127.0.0.1:3306" \
+  -e SOURCE_MYSQL_USER="root" \
+  -e SOURCE_MYSQL_PASSWORD="123456" \
+  -e STORE_TYPE="redis" \
+  -e STORE_REDIS_ADDR="127.0.0.1:6379" \
+  -e PRODUCER_TYPE="pulsar" \
+  -e PRODUCER_PULSAR_URL="pulsar://127.0.0.1:6650" \
+  -e PRODUCER_PULSAR_TOPIC="cdc-go-events" \
+  zhiqiangwang/app:cdc-go
+```
+
+To use your own file instead of the bundled one:
 
 ```bash
 docker run -it --rm \
-    --name cdc-go \
-    -v "$PWD/config.yml:/app/config.yml:ro" \
-    zhiqiangwang/app:cdc-go
+  --name cdc-go \
+  -v "$PWD/config.yml:/app/config.yml:ro" \
+  zhiqiangwang/app:cdc-go
 ```
 
-The environment variables the bundled `config.yml` reads are `STORE_TYPE`, `STORE_FILE_DIR`,
-`STORE_REDIS_ADDR`, `STORE_REDIS_PASSWORD`, `STORE_REDIS_DB`, `SOURCE_TYPE`, `SOURCE_MYSQL_ADDR`,
-`SOURCE_MYSQL_USER`, `SOURCE_MYSQL_PASSWORD`, `SOURCE_MYSQL_SERVER_ID`, `PRODUCER_TYPE`, `PRODUCER_KAFKA_BROKERS`,
-`PRODUCER_KAFKA_TOPIC`, `PRODUCER_RABBITMQ_URL`, `PRODUCER_RABBITMQ_EXCHANGE`, `PRODUCER_RABBITMQ_EXCHANGE_TYPE`,
-`PRODUCER_RABBITMQ_ROUTING_KEY`, `PRODUCER_RABBITMQ_QUEUE`,
-`PRODUCER_REDIS_ADDR`, `PRODUCER_REDIS_PASSWORD`, `PRODUCER_REDIS_DB`, `PRODUCER_REDIS_KEY`,
-`PRODUCER_ROCKETMQ_SERVERS`, `PRODUCER_ROCKETMQ_TOPIC`, `PRODUCER_ROCKETMQ_GROUP`,
-`PRODUCER_ROCKETMQ_NAMESPACE`, `PRODUCER_ROCKETMQ_ACCESS_KEY`, `PRODUCER_ROCKETMQ_SECRET_KEY`,
-`PRODUCER_PULSAR_URL`, `PRODUCER_PULSAR_TOPIC` and `PRODUCER_PULSAR_TOKEN`.
+Build the image locally with:
 
-## Notes
+```bash
+docker build -t cdc-go .
+```
 
-1. **MySQL Configuration Requirements**:
-   - Binary logging must be enabled (`log-bin=ON`)
-   - Server ID must be set (`server-id=1`)
-   - Binlog format should be `ROW` (`binlog_format=ROW`)
-   - Every replication client reading this server needs its own replication server id. cdc-go reports a
-     random id in 1001-2000 unless `source.mysql.server_id` is set; when another client (a replica,
-     Maxwell, a second cdc-go) uses the same id, MySQL drops the older connection and the two reconnect
-     in a loop. See [Selecting a replication server id](#selecting-a-replication-server-id) for the
-     ids already in use.
-2. **Permission Requirements**: When using MySQL data source, ensure the database user has sufficient permissions:
+## Kubernetes and local middleware
+
+The repository includes manifests for the application and the supported
+middleware:
+
+```bash
+# Everything: namespace, middleware StatefulSets and the cdc-go Deployment
+kubectl apply -k deploy/k8s/
+
+# Only the application
+kubectl apply -f deploy/k8s/cdc-go.yml
+```
+
+For local development, [`deploy/compose/services.yml`](./deploy/compose/services.yml)
+brings up MySQL, Redis, Kafka, RabbitMQ, RocketMQ and Pulsar:
+
+```bash
+docker compose -f deploy/compose/services.yml up -d
+```
+
+> The bundled `cdc-go` Deployment uses `replicas: 1` and the `file` offset
+> store. If the pod is recreated, mount a volume for `STORE_FILE_DIR` or switch
+> `store.type` to `redis` to keep the position.
+
+## Consuming events with `cdc-go-task`
+
+`cdc-go-task` consumes the events published by `cdc-go` and routes each one to
+the tasks watching its table. It is configured separately by
+[`config.task.yml`](./config.task.yml), which must point at the same middleware
+destination as the publisher (for example, the same Kafka brokers and topic).
+
+```bash
+make build-task
+./cdc-go-task -c config.task.yml
+```
+
+Available commands:
+
+| Command | Description |
+| --- | --- |
+| `run` | Continuously consume events and run the matching tasks. This is the default command. |
+| `run-by-pk <db.table> <pk>` | Run the tasks watching a table for one main-table row. |
+| `run-by-range <db.table> <start> <end>` | Run the tasks for rows in a half-open time range. |
+| `run-all-by-range <start> <end>` | Run every configured task over every watched table for a time range. |
+
+```bash
+# One row
+./cdc-go-task -c config.task.yml run-by-pk app.user 42
+
+# One day, half-open interval [start, end)
+./cdc-go-task -c config.task.yml run-by-range app.user \
+  "2026-10-17 00:00:00" "2026-10-18 00:00:00"
+
+# Backfill everything the configuration watches
+./cdc-go-task -c config.task.yml run-all-by-range \
+  "2026-10-17 00:00:00" "2026-10-18 00:00:00"
+```
+
+See [`cmd/cdc-go-task/README.md`](./cmd/cdc-go-task/README.md) for the task
+configuration, routing rules and the `task.ITask` interface.
+
+## MySQL setup
+
+### Binary logging
+
+The server must run with row-based binary logging, and the replication client
+needs its own server id:
+
+```ini
+[mysqld]
+log-bin       = mysql-bin
+binlog_format = ROW
+server-id     = 1
+```
+
+### Permissions
+
+Create a dedicated account with replication and read access:
 
 ```sql
--- Create an account
 CREATE USER 'cdcgo'@'%' IDENTIFIED BY 'strong_password';
 
--- Authorization (the REPLICATION permission is required to read the binlog)
+-- Required to read the binlog
 GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'cdcgo'@'%';
 
--- If cdc-go needs to do metadata queries, it also needs read permissions
+-- Required if cdc-go performs metadata queries
 GRANT SELECT ON *.* TO 'cdcgo'@'%';
 
--- Refresh permissions
 FLUSH PRIVILEGES;
 ```
 
 ### Selecting a replication server id
 
-Two replication clients that connect with one `server_id` disconnect each other, so the id cdc-go
-uses has to be free. MySQL shows what it knows:
+Two replication clients that connect with the same `server_id` disconnect each
+other and reconnect in a loop. Every consumer of the same MySQL instance — a
+replica, Maxwell, another `cdc-go` — therefore needs its own id. Inspect the
+server before choosing one:
 
 ```sql
--- Replicas that register themselves (they must run with report_host set).
--- MySQL 8.0.22+; older versions: SHOW SLAVE HOSTS;
+-- Replicas that register themselves (MySQL 8.0.22+; older: SHOW SLAVE HOSTS)
 SHOW REPLICAS;
 
--- The id of each server you know of, run on that server
+-- Id of a server you know, run on that server
 SELECT @@server_id;
 
--- Everything connected right now: one binlog dump thread per replication
--- client, whether or not it is listed above.
+-- Everything connected right now, including clients that do not register:
+-- one binlog dump thread per replication client
 SHOW PROCESSLIST;   -- Command = 'Binlog Dump' or 'Binlog Dump GTID'
 ```
 
-`SHOW REPLICAS` lists the ids of the real replicas only: canal, Maxwell and cdc-go do not register
-themselves, so their dump threads are only visible — and only countable — in `SHOW PROCESSLIST`.
-MySQL does not expose the id of a connected dump thread, so keep the id given to each consumer
-(Maxwell's `server_id`, `source.mysql.server_id` here) and pick one that appears in neither query.
+MySQL does not expose the id of a connected dump thread, so keep a record of
+the id assigned to each consumer and pick one that appears in neither query.
+
+## Development
+
+```bash
+make build        # build ./cdc-go
+make build-task   # build ./cdc-go-task
+make build-all    # build both binaries
+make test         # go test -race -cover over ./... (also fails on a dirty working tree)
+make check        # golangci-lint, errcheck, go fmt and go mod tidy
+```
+
+Run a focused test directly with the Go toolchain:
+
+```bash
+go test ./task/... ./store/...
+```
+
+### Project layout
+
+| Path | Contents |
+| --- | --- |
+| [`cmd/cdc-go`](./cmd/cdc-go) | Publisher entry point. |
+| [`cmd/cdc-go-task`](./cmd/cdc-go-task) | Consumer/task entry point and its documentation. |
+| [`cmd`](./cmd) | Shared CLI wiring for both binaries. |
+| [`config`](./config) | Configuration loading and environment expansion. |
+| [`source`](./source) | Data sources; MySQL binlog implementation. |
+| [`store`](./store) | Offset stores: file and Redis. |
+| [`queue/producer`](./queue/producer) | Event producers for each middleware. |
+| [`queue/consumer`](./queue/consumer) | Event consumers for `cdc-go-task`. |
+| [`task`](./task) | Task runner, routing and the `ITask` interface. |
+| [`types`](./types) | Event and primary-key types. |
+| [`deploy`](./deploy) | Kubernetes manifests and Docker Compose services. |
+
+## License
+
+Licensed under the [Apache License 2.0](./LICENSE).
