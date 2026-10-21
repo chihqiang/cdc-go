@@ -65,6 +65,49 @@ producer:
 	assert.Equal(t, "env-secret-pass", cfg.Source.Mysql.Password)
 }
 
+func TestLoad_ServerID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	content := `store:
+  type: file
+source:
+  type: mysql
+  mysql:
+    server_id: 4321
+producer:
+  type: stdout
+`
+	err := os.WriteFile(path, []byte(content), 0644)
+	assert.NoError(t, err)
+
+	cfg, err := Load(path)
+	assert.NoError(t, err)
+	assert.Equal(t, uint32(4321), cfg.Source.Mysql.ServerID)
+}
+
+func TestLoad_ServerIDFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+
+	t.Setenv("TEST_CDC_SERVER_ID", "2001")
+
+	content := `store:
+  type: file
+source:
+  type: mysql
+  mysql:
+    server_id: "${TEST_CDC_SERVER_ID:-0}"
+producer:
+  type: stdout
+`
+	err := os.WriteFile(path, []byte(content), 0644)
+	assert.NoError(t, err)
+
+	cfg, err := Load(path)
+	assert.NoError(t, err)
+	assert.Equal(t, uint32(2001), cfg.Source.Mysql.ServerID)
+}
+
 func TestLoad_EnvExpansionWithDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")

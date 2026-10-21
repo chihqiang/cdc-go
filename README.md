@@ -127,6 +127,7 @@ source:
     addr: "${SOURCE_MYSQL_ADDR:-127.0.0.1:3306}"  # Database address (host:port)
     user: "${SOURCE_MYSQL_USER:-root}"            # Database username (recommended to use a dedicated account in production)
     password: "${SOURCE_MYSQL_PASSWORD:-123456}"  # Database password
+    server_id: "${SOURCE_MYSQL_SERVER_ID:-0}"     # Replication server id (0 = random 1001-2000; must be unique per client)
     exclude_table_regex:              # Tables to exclude (regex patterns)
       - "mysql.*"
       - "information_schema.*"
@@ -271,7 +272,7 @@ docker run -it --rm \
 
 The environment variables the bundled `config.yml` reads are `STORE_TYPE`, `STORE_FILE_DIR`,
 `STORE_REDIS_ADDR`, `STORE_REDIS_PASSWORD`, `STORE_REDIS_DB`, `SOURCE_TYPE`, `SOURCE_MYSQL_ADDR`,
-`SOURCE_MYSQL_USER`, `SOURCE_MYSQL_PASSWORD`, `PRODUCER_TYPE`, `PRODUCER_KAFKA_BROKERS`,
+`SOURCE_MYSQL_USER`, `SOURCE_MYSQL_PASSWORD`, `SOURCE_MYSQL_SERVER_ID`, `PRODUCER_TYPE`, `PRODUCER_KAFKA_BROKERS`,
 `PRODUCER_KAFKA_TOPIC`, `PRODUCER_RABBITMQ_URL`, `PRODUCER_RABBITMQ_EXCHANGE`, `PRODUCER_RABBITMQ_EXCHANGE_TYPE`,
 `PRODUCER_RABBITMQ_ROUTING_KEY`, `PRODUCER_RABBITMQ_QUEUE`,
 `PRODUCER_REDIS_ADDR`, `PRODUCER_REDIS_PASSWORD`, `PRODUCER_REDIS_DB`, `PRODUCER_REDIS_KEY`,
@@ -285,6 +286,10 @@ The environment variables the bundled `config.yml` reads are `STORE_TYPE`, `STOR
    - Binary logging must be enabled (`log-bin=ON`)
    - Server ID must be set (`server-id=1`)
    - Binlog format should be `ROW` (`binlog_format=ROW`)
+   - Every replication client reading this server needs its own replication server id. cdc-go reports a
+     random id in 1001-2000 unless `source.mysql.server_id` is set; when another client (a replica,
+     Maxwell, a second cdc-go) uses the same id, MySQL drops the older connection and the two reconnect
+     in a loop.
 2. **Permission Requirements**: When using MySQL data source, ensure the database user has sufficient permissions:
 
 ```sql

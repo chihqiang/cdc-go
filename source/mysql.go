@@ -41,6 +41,12 @@ type MysqlConfig struct {
 	Password          string   `json:"password"`
 	ExcludeTableRegex []string `json:"exclude_table_regex"`
 	IncludeTableRegex []string `json:"include_table_regex"`
+	// ServerID is the server id this process reports to MySQL while it reads
+	// the binlog. Zero keeps the driver default, a random id in 1001-2000.
+	// Set it when another replication client -- a replica, Maxwell, or a second
+	// cdc-go -- reads the same server: MySQL drops the older connection when two
+	// clients connect with one id, so every client needs its own.
+	ServerID uint32 `json:"server_id"`
 }
 
 // MySQLSource MySQL datasource specific implementation
@@ -77,13 +83,12 @@ type MysqlPosition struct {
 	Pos uint32 `json:"pos"`
 }
 
-// NewMySQLSource Creates a MySQL datasource instance
-// cfg: MySQL datasource configuration information
-// Returns: MySQLSource instance that implements the ISource interface and potential errors
-func NewMySQLSource(cfg MysqlConfig) (ISource, error) {
-	if len(cfg.ExcludeTableRegex) == 0 {
-		cfg.ExcludeTableRegex = DefaultMysqlExcludeTableRegex
-	}
+// newCanalConfig builds the canal configuration for cfg. It is kept separate
+// from NewMySQLSource so the mapping from the configuration to the driver
+// settings can be tested without a MySQL server: building this value opens no
+// connection, while canal.NewCanal checks the server's binlog format when it is
+// constructed.
+func newCanalConfig(cfg MysqlConfig) *canal.Config {
 	cc := canal.NewDefaultConfig()
 
 	// Set database connection information
@@ -97,6 +102,23 @@ func NewMySQLSource(cfg MysqlConfig) (ISource, error) {
 	if len(cfg.IncludeTableRegex) > 0 {
 		cc.IncludeTableRegex = cfg.IncludeTableRegex
 	}
+	// A zero server id keeps the random one the driver picked, which is what
+	// deployments without another replication client want.
+	if cfg.ServerID != 0 {
+		cc.ServerID = cfg.ServerID
+	}
+	return cc
+}
+
+// NewMySQLSource Creates a MySQL datasource instance
+// cfg: MySQL datasource configuration information
+// Returns: MySQLSource instance that implements the ISource interface and potential errors
+func NewMySQLSource(cfg MysqlConfig) (ISource, error) {
+	if len(cfg.ExcludeTableRegex) == 0 {
+		cfg.ExcludeTableRegex = DefaultMysqlExcludeTableRegex
+	}
+	cc := newCanalConfig(cfg)
+
 	// Create MySQLSource instance
 	source := &MySQLSource{
 		cfg:           cfg,

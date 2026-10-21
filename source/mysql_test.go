@@ -237,6 +237,35 @@ func TestNewSource_UnknownType(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported source type")
 }
 
+// ---- newCanalConfig tests ----
+
+func TestNewCanalConfig_ConfiguredServerID(t *testing.T) {
+	cc := newCanalConfig(MysqlConfig{
+		Addr:              "10.0.0.1:3306",
+		User:              "cdcgo",
+		Password:          "secret",
+		ServerID:          4321,
+		ExcludeTableRegex: []string{`^mysql\.`},
+		IncludeTableRegex: []string{`^app\.orders$`},
+	})
+
+	assert.Equal(t, uint32(4321), cc.ServerID)
+	assert.Equal(t, "10.0.0.1:3306", cc.Addr)
+	assert.Equal(t, "cdcgo", cc.User)
+	assert.Equal(t, "secret", cc.Password)
+	assert.Equal(t, []string{`^mysql\.`}, cc.ExcludeTableRegex)
+	assert.Equal(t, []string{`^app\.orders$`}, cc.IncludeTableRegex)
+}
+
+func TestNewCanalConfig_ServerIDDefaultsToRandomRange(t *testing.T) {
+	// Without a configured id the driver picks one in 1001-2000; keeping that
+	// behaviour is what lets a deployment without other replication clients
+	// run unchanged.
+	cc := newCanalConfig(MysqlConfig{})
+	assert.GreaterOrEqual(t, cc.ServerID, uint32(1001))
+	assert.LessOrEqual(t, cc.ServerID, uint32(2000))
+}
+
 func TestMySQLSource_WithStore(t *testing.T) {
 	ms := &memStore{data: map[string][]byte{}}
 	s := &MySQLSource{runCtx: context.Background()}

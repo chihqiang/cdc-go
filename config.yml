@@ -34,6 +34,11 @@ source:
     addr: "${SOURCE_MYSQL_ADDR:-127.0.0.1:3306}"  # Database address (host:port)
     user: "${SOURCE_MYSQL_USER:-root}"            # Database username (recommended to use a dedicated account in production)
     password: "${SOURCE_MYSQL_PASSWORD:-123456}"  # Database password (required, no default for security)
+    # Replication server id. 0 means a random id in 1001-2000, which is enough
+    # for a single consumer. Give every replication client of this MySQL instance
+    # (a replica, Maxwell, another cdc-go) its own id: when two connect with the
+    # same id, MySQL drops the older connection.
+    server_id: "${SOURCE_MYSQL_SERVER_ID:-0}"
     exclude_table_regex:              # Tables to exclude (regex patterns)
       - "mysql.*"
       - "information_schema.*"
