@@ -225,21 +225,23 @@ Each change is published as one JSON document:
   "server_id": 1,
   "pos": 194512345,
   "row": {
-    "time": 1761004200,
+    "time": 1792549800,
     "database": "app",
     "table": "user",
     "type": "update",
     "data": {
       "id": 42,
       "name": "Alice",
-      "active": true,
-      "created_at": "2026-10-21T10:29:58+08:00"
+      "active": 1,
+      "balance": "12.34",
+      "created_at": "2026-10-21 10:29:58"
     },
     "old": {
       "id": 42,
       "name": "alice",
-      "active": true,
-      "created_at": "2026-10-21T10:29:58+08:00"
+      "active": 1,
+      "balance": "12.34",
+      "created_at": "2026-10-21 10:29:58"
     }
   }
 }
@@ -250,16 +252,17 @@ Each change is published as one JSON document:
 | `time` | When `cdc-go` captured the event. |
 | `server_id` | MySQL server id from the binlog header. |
 | `pos` | Binlog position of the event. |
-| `row.time` | Binlog event timestamp reported by MySQL. |
+| `row.time` | Binlog event timestamp in Unix seconds. |
 | `row.database` / `row.table` | Source table. |
 | `row.type` | `insert`, `update` or `delete`. |
 | `row.data` | Row values after the change; for a delete, the deleted row. |
 | `row.old` | Row values before an update. Omitted for inserts and deletes. |
 
-Values are converted to natural JSON types: integers and decimals become
-numbers, `BIT` becomes a boolean, date/time values are emitted as strings, and
-text/binary columns become strings. Every binlog position is persisted after it
-has been handled, which is what makes resumption possible.
+Values follow the type the MySQL driver decodes: integer and float columns
+become JSON numbers, while `DECIMAL`, date/time and JSON columns are emitted as
+strings (`DATETIME` keeps MySQL's `YYYY-MM-DD HH:MM:SS` form). `BIT` is emitted
+as `0` or `1`, and text/binary columns become strings. Every binlog position is
+persisted after it has been handled, which is what makes resumption possible.
 
 ## Docker
 

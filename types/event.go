@@ -30,7 +30,7 @@ type EventData struct {
 // Captures the details of the specific change event (insert, update, delete)
 
 type EventRowData struct {
-	// Time Timestamp of the event occurrence (in milliseconds)
+	// Time Timestamp of the event occurrence, in Unix seconds
 	Time int64 `json:"time"`
 	// Database The name of the database where the change occurred
 	Database string `json:"database"`
