@@ -141,6 +141,20 @@ sub tables runs once per table. This is the command for a backfill that has to
 cover everything the tasks handle. Times use the same `2006-01-02 15:04:05`
 format.
 
+To leave tasks out of the run, name their main tables with `--exclude` (`-x`).
+The whole task is left out, its sub tables included, and the flag repeats:
+
+```bash
+./cdc-go-task -c config.task.yml run-all-by-range \
+  "2026-10-17 00:00:00" "2026-10-18 00:00:00" --exclude app.order
+```
+
+With the checked-in configuration that runs `app.user`, `app.user_log`, and
+`app.user_token`, and leaves out `app.order` together with `app.order_item`. A
+comma-separated list works too (`-x app.order,app.user`). A name no task answers
+to is ignored, so one exclude list can be shared by configurations that declare
+different tasks.
+
 ## Task configuration
 
 `config.task.yml` contains a `consumer` section and a `tasks` list. Each task
@@ -185,7 +199,8 @@ The command actions and task configuration type are in
 5. The manual commands build a runner without a consumer and call
    `RunByPrimaryKey`, `RunByTimeRange`, or `RunAllByTimeRange` directly. A row
    named on the command line has no change behind it, so the task receives an
-   empty `types.EventRowData`.
+   empty `types.EventRowData`. `RunAllByTimeRange` takes the main tables of the
+   tasks to leave out, so one backfill can skip a task it does not need.
 
 Tasks implement the [`task.ITask`](../../task/task.go) interface: they declare
 their main and sub tables and implement the primary-key and time-range runs.
