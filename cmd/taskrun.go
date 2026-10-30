@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -66,6 +67,10 @@ func loadTaskConfig(in *cli.Input) (*TaskConfig, error) {
 // (per-command), and the value lookup walks the parent chain so the two never
 // disagree.
 const flagTaskConfig = "task-config"
+
+// flagExcludeTable is the flag name for the tasks a run-all-by-range leaves out,
+// each named by the main table of the task.
+const flagExcludeTable = "exclude"
 
 // TaskFlags returns the task configuration flag. It is declared on the root
 // command (so -c works before the subcommand name) and on every subcommand
@@ -226,13 +231,19 @@ func TaskRunByTimeRange(ctx context.Context, cfg *TaskConfig, table, startStr, e
 
 // TaskRunAllByTimeRangeCommand creates the "run-all-by-range" subcommand: it
 // executes every configured task for the rows of every table those tasks watch
-// whose time falls in [start, end).
+// whose time falls in [start, end), except the tasks the exclude flag names.
 func TaskRunAllByTimeRangeCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "run-all-by-range",
 		Usage:     "Execute every configured task for the rows of every table it watches whose time falls in a range",
 		ArgsUsage: "<start> <end>",
-		Flags:     TaskFlags(),
+		Flags: append(TaskFlags(), &cli.StringSliceFlag{
+			Name:    flagExcludeTable,
+			Aliases: []string{"x"},
+			Usage: "Leave out the task whose main table is `db.table`; repeat the flag or write " +
+				"a comma-separated list to leave out several",
+			DefaultText: "none",
+		}),
 		Action: func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			cfg, err := loadTaskConfig(in)
 			if err != nil {
@@ -242,14 +253,15 @@ func TaskRunAllByTimeRangeCommand() *cli.Command {
 			if args.Len() < 2 {
 				return fmt.Errorf("usage: run-all-by-range <start> <end>  (time format: 2006-01-02 15:04:05)")
 			}
-			return TaskRunAllByTimeRange(ctx, cfg, args.First(), args.Get(1))
+			return TaskRunAllByTimeRange(ctx, cfg, args.First(), args.Get(1), in.StringSlice(flagExcludeTable)...)
 		},
 	}
 }
 
 // TaskRunAllByTimeRange builds a runner without a consumer and executes every
-// task for every table it watches in [start, end).
-func TaskRunAllByTimeRange(ctx context.Context, cfg *TaskConfig, startStr, endStr string) error {
+// task for every table it watches in [start, end), except the tasks that exclude
+// names by their main table.
+func TaskRunAllByTimeRange(ctx context.Context, cfg *TaskConfig, startStr, endStr string, exclude ...string) error {
 	start, end, err := parseRange(startStr, endStr)
 	if err != nil {
 		return err
@@ -260,8 +272,13 @@ func TaskRunAllByTimeRange(ctx context.Context, cfg *TaskConfig, startStr, endSt
 		return fmt.Errorf("failed to create runner: %w", err)
 	}
 
-	logx.Info("running all %d task(s) from %s to %s", len(cfg.Tasks), start, end)
-	return runner.RunAllByTimeRange(ctx, start, end)
+	if len(exclude) > 0 {
+		logx.Info("running the tasks from %s to %s, leaving out %s",
+			start, end, strings.Join(exclude, ", "))
+	} else {
+		logx.Info("running all %d task(s) from %s to %s", len(cfg.Tasks), start, end)
+	}
+	return runner.RunAllByTimeRange(ctx, start, end, exclude...)
 }
 
 // rangeLayout is the format the start and end of a range are given in.

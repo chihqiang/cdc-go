@@ -385,6 +385,78 @@ func TestRunAllByTimeRange_RunsEveryTableOfEveryTask(t *testing.T) {
 	assert.Equal(t, []rangeCall{{table: other.main, start: start, end: end}}, other.recordedRanges())
 }
 
+func TestRunAllByTimeRange_LeavesOutTheTaskItIsToldTo(t *testing.T) {
+	start, end := rangeOf()
+	user := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
+	order := &fakeTask{main: Table{Database: "app", Name: "order", PrimaryKey: "id"}}
+	r := newRunner(t, nil, user, order)
+
+	err := r.RunAllByTimeRange(context.Background(), start, end, "app.order")
+
+	assert.NoError(t, err)
+	// The task is named by its main table, and the one left out is left out whole:
+	// its main table and every sub table it watches.
+	assert.ElementsMatch(t, []rangeCall{
+		{table: tableUser, start: start, end: end},
+		{table: tableUserLog, start: start, end: end},
+	}, user.recordedRanges())
+	assert.Empty(t, order.recordedRanges())
+}
+
+func TestRunAllByTimeRange_LeavesOutSeveralTasks(t *testing.T) {
+	start, end := rangeOf()
+	user := &fakeTask{main: tableUser}
+	order := &fakeTask{main: Table{Database: "app", Name: "order", PrimaryKey: "id"}}
+	kept := &fakeTask{main: Table{Database: "app", Name: "ticket", PrimaryKey: "id"}}
+	r := newRunner(t, nil, user, order, kept)
+
+	err := r.RunAllByTimeRange(context.Background(), start, end, "app.user", "app.order")
+
+	assert.NoError(t, err)
+	assert.Empty(t, user.recordedRanges())
+	assert.Empty(t, order.recordedRanges())
+	assert.Len(t, kept.recordedRanges(), 1)
+}
+
+func TestRunAllByTimeRange_LeavesOutEveryTaskDeclaringTheTable(t *testing.T) {
+	start, end := rangeOf()
+	// Two tasks watch the same main table, which is what a fan-out is; the name
+	// leaves out both, since it names the table rather than one of them.
+	first := &fakeTask{main: tableUser}
+	second := &fakeTask{main: tableUser}
+	r := newRunner(t, nil, first, second)
+
+	err := r.RunAllByTimeRange(context.Background(), start, end, "app.user")
+
+	assert.NoError(t, err)
+	assert.Empty(t, first.recordedRanges())
+	assert.Empty(t, second.recordedRanges())
+}
+
+func TestRunAllByTimeRange_LeavesOutNothingForATableNoTaskAnswersTo(t *testing.T) {
+	start, end := rangeOf()
+	tk := &fakeTask{main: tableUser}
+	r := newRunner(t, nil, tk)
+
+	// A list shared between configurations names tasks one of them does not
+	// declare; that is not a failure, and nothing else is left out.
+	err := r.RunAllByTimeRange(context.Background(), start, end, "app.other", "nonsense")
+
+	assert.NoError(t, err)
+	assert.Len(t, tk.recordedRanges(), 1)
+}
+
+func TestRunAllByTimeRange_NothingIsRunWhenEverythingIsLeftOut(t *testing.T) {
+	start, end := rangeOf()
+	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
+	r := newRunner(t, nil, tk)
+
+	err := r.RunAllByTimeRange(context.Background(), start, end, "app.user")
+
+	assert.NoError(t, err)
+	assert.Empty(t, tk.recordedRanges())
+}
+
 func TestRunAllByTimeRange_ReportsTheFailuresInTheSameOrderEveryTime(t *testing.T) {
 	start, end := rangeOf()
 

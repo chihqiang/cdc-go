@@ -28,6 +28,9 @@ type watcher struct {
 	// main tells whether that table is the main table of the task, which is what
 	// decides between Table.PrimaryKey and Table.RefColumn.
 	main bool
+	// taskKey is the main table of the task this watcher belongs to, written as
+	// db.table: what a caller names to leave that task out of a run.
+	taskKey string
 }
 
 // indexTasks Reads the tables of every task and indexes them, so that a change is
@@ -42,13 +45,14 @@ func indexTasks(tasks []ITask) (watchers, error) {
 		if err := validateTable(main, true); err != nil {
 			return nil, fmt.Errorf("in %T: %w", t, err)
 		}
-		index.add(main, watcher{task: t, table: main, main: true})
+		mainKey := tableKeyOf(main.Database, main.Name)
+		index.add(main, watcher{task: t, table: main, main: true, taskKey: mainKey})
 
 		// A table declared twice for the same task would run it twice for one
 		// change, and with two different columns to read the value from, which is
 		// never what is meant. The same table watched by two tasks is fine: that
 		// is what a fan-out is.
-		declared := map[string]bool{tableKeyOf(main.Database, main.Name): true}
+		declared := map[string]bool{mainKey: true}
 
 		for _, sub := range t.SubTables() {
 			if err := validateTable(sub, false); err != nil {
@@ -60,7 +64,7 @@ func indexTasks(tasks []ITask) (watchers, error) {
 					t, key)
 			}
 			declared[key] = true
-			index.add(sub, watcher{task: t, table: sub})
+			index.add(sub, watcher{task: t, table: sub, taskKey: mainKey})
 		}
 	}
 	return index, nil
@@ -77,9 +81,20 @@ func (ws watchers) of(key string) []watcher {
 	return ws[key]
 }
 
-// all Returns every table of every task, ordered by table, so that a run over all
-// of them reports its failures in the same order every time.
-func (ws watchers) all() []watcher {
+// all Returns every table of every task except those of the tasks named by
+// exclude, ordered by table, so that a run over all of them reports its failures
+// in the same order every time.
+//
+// An entry of exclude names a task by its main table, written as db.table, and
+// leaves out that whole task: its main table and every sub table it watches. A
+// name no task answers to leaves out nothing, so a list shared between
+// configurations does not fail on a task one of them does not declare.
+func (ws watchers) all(exclude ...string) []watcher {
+	left := make(map[string]bool, len(exclude))
+	for _, key := range exclude {
+		left[key] = true
+	}
+
 	keys := make([]string, 0, len(ws))
 	for key := range ws {
 		keys = append(keys, key)
@@ -88,7 +103,12 @@ func (ws watchers) all() []watcher {
 
 	all := make([]watcher, 0, len(keys))
 	for _, key := range keys {
-		all = append(all, ws[key]...)
+		for _, w := range ws[key] {
+			if left[w.taskKey] {
+				continue
+			}
+			all = append(all, w)
+		}
 	}
 	return all
 }
