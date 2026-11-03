@@ -6,7 +6,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/apache/pulsar-client-go v0.18.0
 	github.com/apache/rocketmq-client-go/v2 v2.1.2
-	github.com/chihqiang/cli v0.1.0
+	github.com/chihqiang/cli v0.1.1-0.20261103052630-3bb51355558d
 	github.com/chihqiang/logx v0.1.0
 	github.com/chihqiang/readin v0.1.0
 	github.com/go-mysql-org/go-mysql v1.16.0

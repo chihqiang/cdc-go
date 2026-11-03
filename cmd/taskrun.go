@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -40,13 +41,6 @@ func (c *TaskConfig) BuildTasks() []task.ITask {
 //
 // The file uses the same ${VAR} / ${VAR:-fallback} environment expansion as the
 // main config.yml, so one file works unchanged across environments.
-//
-// The root Before hook loads the file the root-level flag names (or its
-// default) into the context. When the flag is set on the subcommand instead,
-// in.String walks the parent chain and returns the subcommand-level value,
-// which may differ from what Before loaded. Loading from what in names keeps
-// the two consistent: the subcommand-level value when set, the root-level one
-// otherwise.
 func loadTaskConfig(in *cli.Input) (*TaskConfig, error) {
 	path := in.String(flagTaskConfig)
 	cfg := &TaskConfig{}
@@ -58,14 +52,37 @@ func loadTaskConfig(in *cli.Input) (*TaskConfig, error) {
 	return cfg, nil
 }
 
-// flagTaskConfig is the flag name for the task configuration file.
+// TaskBefore is the root Before hook: it reads the configuration once per
+// invocation and puts it in the context, before any subcommand runs.
 //
-// The flag is declared on the root command and on every subcommand: the cli
-// library parses a command's own flags only, so a subcommand that does not
-// declare the flag cannot recognize it on its command line. Declaring it on
-// both lets it be used either before the subcommand name (global) or after it
-// (per-command), and the value lookup walks the parent chain so the two never
-// disagree.
+// The configuration is one setting for the whole program, so it is read here
+// rather than by each command: the flag is declared on the root command only,
+// and the commands take the loaded configuration from the context.
+func TaskBefore(ctx context.Context, in *cli.Input, _ *cli.Output) (context.Context, error) {
+	if needsNoConfig(in) {
+		return ctx, nil
+	}
+	cfg, err := loadTaskConfig(in)
+	if err != nil {
+		return ctx, err
+	}
+	return context.WithValue(ctx, ContextValueTaskConfig, cfg), nil
+}
+
+// ContextValueTaskConfig is the key of the task configuration in the context.
+var ContextValueTaskConfig ContextValue = "task-config"
+
+// TaskConfigFromContext returns the configuration TaskBefore loaded, or reports
+// that the command is not running under the root command that loads it.
+func TaskConfigFromContext(ctx context.Context) (*TaskConfig, error) {
+	cfg, ok := ctx.Value(ContextValueTaskConfig).(*TaskConfig)
+	if !ok {
+		return nil, errors.New("the task configuration is not in the context: the command has to run under the root command, whose Before hook loads it")
+	}
+	return cfg, nil
+}
+
+// flagTaskConfig is the flag name for the task configuration file.
 const flagTaskConfig = "task-config"
 
 // flagExcludeTable is the flag name for the tasks a run-all-by-range leaves out,
@@ -73,8 +90,9 @@ const flagTaskConfig = "task-config"
 const flagExcludeTable = "exclude"
 
 // TaskFlags returns the task configuration flag. It is declared on the root
-// command (so -c works before the subcommand name) and on every subcommand
-// (so -c works after the subcommand name too).
+// command only: it selects the configuration of the whole program, so a
+// subcommand does not declare it again and does not parse it on its own command
+// line. Write it before the subcommand name.
 func TaskFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
@@ -86,31 +104,14 @@ func TaskFlags() []cli.Flag {
 	}
 }
 
-// TaskBefore is the root Before hook. It loads the configuration the root-level
-// flag names (or its default) into the context, so a default action (no
-// subcommand) also has it. Subcommand actions call loadTaskConfig, which
-// reloads the file when the flag was set on the subcommand and the root-level
-// value differs.
-func TaskBefore(ctx context.Context, in *cli.Input, _ *cli.Output) (context.Context, error) {
-	cfg, err := loadTaskConfig(in)
-	if err != nil {
-		return ctx, err
-	}
-	return context.WithValue(ctx, ContextValueTaskConfig, cfg), nil
-}
-
-// ContextValueTaskConfig is the context key for the task configuration.
-var ContextValueTaskConfig ContextValue = "task-config"
-
 // TaskRunCommand creates the "run" subcommand: it consumes events from the
 // middleware and routes them to the tasks declared in the configuration.
 func TaskRunCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "run",
 		Usage: "Consume CDC events from the middleware and execute the tasks watching each change",
-		Flags: TaskFlags(),
-		Action: func(ctx context.Context, in *cli.Input, out *cli.Output) error {
-			cfg, err := loadTaskConfig(in)
+		Action: func(ctx context.Context, _ *cli.Input, _ *cli.Output) error {
+			cfg, err := TaskConfigFromContext(ctx)
 			if err != nil {
 				return err
 			}
@@ -162,9 +163,8 @@ func TaskRunByPrimaryKeyCommand() *cli.Command {
 		Name:      "run-by-pk",
 		Usage:     "Execute the tasks watching a table for one row of their main table",
 		ArgsUsage: "<db.table> <primary-key-value>",
-		Flags:     TaskFlags(),
 		Action: func(ctx context.Context, in *cli.Input, out *cli.Output) error {
-			cfg, err := loadTaskConfig(in)
+			cfg, err := TaskConfigFromContext(ctx)
 			if err != nil {
 				return err
 			}
@@ -197,9 +197,8 @@ func TaskRunByTimeRangeCommand() *cli.Command {
 		Name:      "run-by-range",
 		Usage:     "Execute the tasks watching a table for the rows whose time falls in a range",
 		ArgsUsage: "<db.table> <start> <end>",
-		Flags:     TaskFlags(),
 		Action: func(ctx context.Context, in *cli.Input, out *cli.Output) error {
-			cfg, err := loadTaskConfig(in)
+			cfg, err := TaskConfigFromContext(ctx)
 			if err != nil {
 				return err
 			}
@@ -237,15 +236,15 @@ func TaskRunAllByTimeRangeCommand() *cli.Command {
 		Name:      "run-all-by-range",
 		Usage:     "Execute every configured task for the rows of every table it watches whose time falls in a range",
 		ArgsUsage: "<start> <end>",
-		Flags: append(TaskFlags(), &cli.StringSliceFlag{
+		Flags: []cli.Flag{&cli.StringSliceFlag{
 			Name:    flagExcludeTable,
 			Aliases: []string{"x"},
 			Usage: "Leave out the task whose main table is `db.table`; repeat the flag or write " +
 				"a comma-separated list to leave out several",
 			DefaultText: "none",
-		}),
+		}},
 		Action: func(ctx context.Context, in *cli.Input, out *cli.Output) error {
-			cfg, err := loadTaskConfig(in)
+			cfg, err := TaskConfigFromContext(ctx)
 			if err != nil {
 				return err
 			}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"runtime"
@@ -41,6 +42,10 @@ func main() {
 
 	if err := app.Run(ctx, os.Args); err != nil {
 		logx.Error("%v", err)
+		var usageErr *cli.UsageError
+		if errors.As(err, &usageErr) {
+			logx.Error("run '%s --help' for usage", app.Name)
+		}
 		os.Exit(1)
 	}
 }
