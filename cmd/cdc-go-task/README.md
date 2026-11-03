@@ -45,13 +45,19 @@ cdc-go-task [--task-config FILE] [command] [command options]
 ```
 
 The task configuration defaults to `config.task.yml`. Use `-c` or
-`--task-config` to select another file. The flag works before or after a
-subcommand:
+`--task-config` to select another file. The configuration is one setting for the
+whole program, so the flag is global: write it before the subcommand name.
 
 ```bash
 ./cdc-go-task -c config.task.yml run
-./cdc-go-task run -c config.task.yml
+./cdc-go-task -c other.task.yml run-all-by-range "2026-10-17 00:00:00" "2026-10-18 00:00:00"
 ```
+
+A subcommand does not declare the flag again, so `run -c other.task.yml` is
+rejected as an unknown flag rather than silently using the default file.
+
+`--verbose`, `--quiet`, and `--no-interaction` differ: they are builtin global
+flags and work on either side of the subcommand name.
 
 When no subcommand is supplied, the command defaults to `run`:
 
@@ -181,13 +187,17 @@ are ignored.
 ## Implementation
 
 The executable entry point is [`main.go`](./main.go). It creates the CLI
-commands, attaches the task configuration flag and loader, and installs
-SIGINT/SIGTERM cancellation.
+commands, attaches the task configuration flag and the `Before` hook, and
+installs SIGINT/SIGTERM cancellation.
 
 The command actions and task configuration type are in
 [`../taskrun.go`](../taskrun.go):
 
-1. `loadTaskConfig` loads the YAML file with environment expansion.
+1. `TaskBefore` is the root `Before` hook: `loadTaskConfig` reads the YAML file
+   with environment expansion once per invocation, and the configuration is put
+   in the context. Every command takes it from there with
+   `TaskConfigFromContext`, so the file is read once and the flag is declared
+   only on the root command.
 2. `TaskConfig.BuildTasks` turns the configured task definitions into
    `task.ITask` implementations.
 3. `TaskRun` creates the configured middleware consumer and a `task.Runner`,

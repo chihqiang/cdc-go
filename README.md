@@ -99,8 +99,12 @@ fails. Use `-c` / `--config` to select a file (default: `config.yml`):
 ```bash
 ./cdc-go -c config.local.yml
 # `listen` is the same action, and can be given explicitly:
-./cdc-go listen -c config.local.yml
+./cdc-go -c config.local.yml listen
 ```
+
+The configuration is one setting for the whole program, so `-c` is a global flag
+and goes before the subcommand name. `--verbose`, `--quiet`, and
+`--no-interaction` work on either side of it.
 
 With the default `stdout` producer, captured changes are printed as indented
 JSON. Point `producer.type` at a middleware to publish them elsewhere.

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -17,13 +18,17 @@ const (
 	FlagConfig = "config"
 )
 
+// ContextValue is the type of the keys this package stores in a context.
 type ContextValue string
 
-var (
-	ContextValueConfig ContextValue = "config"
-)
+// ContextValueConfig is the key of the configuration in the context.
+var ContextValueConfig ContextValue = "config"
 
-// Flags returns the flags of the cdc-go command
+// Flags returns the flags of the cdc-go command.
+//
+// They are declared on the root command only: the configuration file belongs to
+// the whole program, so a subcommand does not declare the flag again. Write it
+// before the subcommand name.
 func Flags() []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
@@ -35,14 +40,38 @@ func Flags() []cli.Flag {
 	}
 }
 
-// Before loads the configuration file and returns
+// needsNoConfig reports whether the command line asks for the builtin help or
+// version output. They print from the command tree alone, so a configuration file
+// that is missing or unreadable should not stop them.
+func needsNoConfig(in *cli.Input) bool {
+	switch in.Args().First() {
+	case "help", "version":
+		return true
+	}
+	return false
+}
+
+// Before is the root Before hook: it reads the configuration once per invocation
+// and puts it in the context, before any subcommand runs.
 func Before(ctx context.Context, in *cli.Input, _ *cli.Output) (context.Context, error) {
-	conf, err := config.Load(in.String(FlagConfig))
+	if needsNoConfig(in) {
+		return ctx, nil
+	}
+	cfg, err := config.Load(in.String(FlagConfig))
 	if err != nil {
 		return ctx, err
 	}
-	//Put the configuration into the context
-	return context.WithValue(ctx, ContextValueConfig, conf), nil
+	return context.WithValue(ctx, ContextValueConfig, cfg), nil
+}
+
+// ConfigFromContext returns the configuration Before loaded, or reports that the
+// command is not running under the root command that loads it.
+func ConfigFromContext(ctx context.Context) (*config.Config, error) {
+	cfg, ok := ctx.Value(ContextValueConfig).(*config.Config)
+	if !ok {
+		return nil, errors.New("the configuration is not in the context: the command has to run under the root command, whose Before hook loads it")
+	}
+	return cfg, nil
 }
 
 // SetupComponents components: Store, Source, Producer
@@ -94,11 +123,10 @@ func ListenCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "listen",
 		Usage: "Listen to CDC events without sending them to any producer",
-		Flags: []cli.Flag{},
 		Action: func(ctx context.Context, _ *cli.Input, _ *cli.Output) error {
-			cfg, ok := ctx.Value(ContextValueConfig).(*config.Config)
-			if !ok {
-				return fmt.Errorf("config not found in context")
+			cfg, err := ConfigFromContext(ctx)
+			if err != nil {
+				return err
 			}
 			return Listen(ctx, cfg)
 		},

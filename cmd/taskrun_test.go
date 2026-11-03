@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/chihqiang/cdc-go/task"
+	"github.com/chihqiang/cli"
 	"github.com/chihqiang/logx"
 	"github.com/stretchr/testify/assert"
 )
@@ -38,20 +41,120 @@ func TestParseRange_ReportsAnEmptyRange(t *testing.T) {
 	assert.ErrorContains(t, err, "empty")
 }
 
-func TestTaskRunAllByTimeRangeCommand_DeclaresItsArguments(t *testing.T) {
+func TestTaskRunAllByTimeRangeCommand_DeclaresItsOwnArgumentOnly(t *testing.T) {
 	c := TaskRunAllByTimeRangeCommand()
 
 	assert.Equal(t, "run-all-by-range", c.Name)
 	assert.Equal(t, "<start> <end>", c.ArgsUsage)
-	assert.Len(t, c.Flags, 2)
-	assert.Equal(t, flagExcludeTable, c.Flags[1].Names()[0])
-	assert.Contains(t, c.Flags[1].Names(), "x")
+	// The configuration is a global flag of the root command, so the subcommand
+	// declares only what is its own.
+	assert.Len(t, c.Flags, 1)
+	assert.Equal(t, flagExcludeTable, c.Flags[0].Names()[0])
+	assert.Contains(t, c.Flags[0].Names(), "x")
+}
+
+func TestTaskSubcommands_DoNotDeclareTheConfigFlag(t *testing.T) {
+	// One flag on the root is what makes the configuration a global setting; a
+	// subcommand declaring it again would give the program two places to parse it.
+	for _, c := range []*cli.Command{
+		TaskRunCommand(),
+		TaskRunByPrimaryKeyCommand(),
+		TaskRunByTimeRangeCommand(),
+		TaskRunAllByTimeRangeCommand(),
+	} {
+		for _, f := range c.Flags {
+			assert.NotEqual(t, flagTaskConfig, f.Names()[0], "%s declares the config flag", c.Name)
+		}
+	}
 }
 
 func TestTaskRunAllByTimeRange_ReportsAnInvalidRange(t *testing.T) {
 	// The configuration is only read after the range parses, so an empty
 	// configuration still reports the time it could not read.
 	err := TaskRunAllByTimeRange(t.Context(), &TaskConfig{}, "nope", "2026-10-18 00:00:00")
+
+	assert.ErrorContains(t, err, "invalid start time")
+}
+
+// taskAppForTest builds the command tree the cdc-go-task binary runs, so a test
+// exercises its arguments the way the binary parses them.
+func taskAppForTest() *cli.Command {
+	runCmd := TaskRunCommand()
+	app := &cli.Command{
+		Name:    "cdc-go-task",
+		Version: "test",
+		Flags:   TaskFlags(),
+		Before:  TaskBefore,
+		Subcommands: []*cli.Command{
+			runCmd,
+			TaskRunByPrimaryKeyCommand(),
+			TaskRunByTimeRangeCommand(),
+			TaskRunAllByTimeRangeCommand(),
+		},
+	}
+	// The default action is "run" when no subcommand is given, as in main.
+	app.Action = runCmd.Action
+	return app
+}
+
+// writeTaskConfig writes a task configuration watching one table and returns its
+// path. The consumer type is all the file needs: the manual commands build no
+// consumer.
+func writeTaskConfig(t *testing.T, table string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "tasks.yml")
+	body := "consumer:\n  type: redis\ntasks:\n  - main:\n      database: app\n      name: " + table +
+		"\n      primary_key: id\n"
+	assert.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	return path
+}
+
+func TestTaskCommand_LoadsTheFileNamedBeforeTheSubcommand(t *testing.T) {
+	path := writeTaskConfig(t, "ticket")
+	logs := logsOf(t)
+
+	err := taskAppForTest().Run(context.Background(), []string{
+		"cdc-go-task", "-c", path, "run-all-by-range", "2026-10-17 00:00:00", "2026-10-18 00:00:00",
+	})
+
+	assert.NoError(t, err)
+	assert.Contains(t, logs(), "app.ticket")
+}
+
+func TestTaskCommand_RejectsTheConfigFlagAfterTheSubcommand(t *testing.T) {
+	path := writeTaskConfig(t, "ticket")
+
+	// The flag is global: the position before the subcommand is the one that is
+	// parsed, and the subcommand reports the second one as unknown rather than
+	// silently ignoring it.
+	err := taskAppForTest().Run(context.Background(), []string{
+		"cdc-go-task", "-c", path, "run-all-by-range", "-c", "other.yml",
+		"2026-10-17 00:00:00", "2026-10-18 00:00:00",
+	})
+
+	assert.ErrorContains(t, err, "flag provided but not defined: -c")
+}
+
+func TestTaskCommand_LoadsTheFileNamedForATaskCommand(t *testing.T) {
+	path := writeTaskConfig(t, "ticket")
+	logs := logsOf(t)
+	t.Chdir(t.TempDir())
+
+	err := taskAppForTest().Run(context.Background(), []string{
+		"cdc-go-task", "-c", path, "run-by-pk", "app.ticket", "42",
+	})
+
+	assert.NoError(t, err)
+	assert.Contains(t, logs(), "the row 42 of app.ticket")
+}
+
+func TestTaskCommand_SaysWhichTimeItCouldNotRead(t *testing.T) {
+	path := writeTaskConfig(t, "ticket")
+
+	err := taskAppForTest().Run(context.Background(), []string{
+		"cdc-go-task", "-c", path, "run-all-by-range", "yesterday", "2026-10-18 00:00:00",
+	})
 
 	assert.ErrorContains(t, err, "invalid start time")
 }
@@ -115,4 +218,21 @@ func TestTaskRunAllByTimeRange_RunsEveryTaskWithoutAnExclusion(t *testing.T) {
 
 	assert.Contains(t, logs(), "app.user")
 	assert.Contains(t, logs(), "app.order")
+}
+
+func TestTaskCommand_PrintsVersionWithoutAConfigFile(t *testing.T) {
+	// The version and help output come from the command tree, so Before does not
+	// hold them up when no configuration file is there to read.
+	t.Chdir(t.TempDir())
+
+	err := taskAppForTest().Run(context.Background(), []string{"cdc-go-task", "version"})
+
+	assert.NoError(t, err)
+}
+
+func TestTaskConfigFromContext_ReportsAMissingConfiguration(t *testing.T) {
+	cfg, err := TaskConfigFromContext(t.Context())
+
+	assert.Nil(t, cfg)
+	assert.ErrorContains(t, err, "not in the context")
 }
