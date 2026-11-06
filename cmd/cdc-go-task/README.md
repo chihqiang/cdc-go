@@ -118,6 +118,19 @@ The table must be written as `database.table`. For a main table, the value is
 its `primary_key`. For a sub table, the value is the owning main row's
 `ref_column` value. For example, `app.user_log 42` runs the task for user 42.
 
+More than one task can watch the same table, which is what a fan-out is. By
+default every one of them runs; `-t` / `--task` runs the one it names, and only
+that one:
+
+```bash
+./cdc-go-task -c config.task.yml run-by-pk -t user-sync app.user 42
+```
+
+The name is the `name` of the task in `config.task.yml`. A name no task
+declares, and a task that does not watch the named table, are reported as the
+two different mistakes they are. The flag goes before the arguments, since the
+positional ones end the flag list.
+
 ### `run-by-range`
 
 Runs watching tasks for rows in the half-open interval `[start, end)`:
@@ -129,7 +142,12 @@ Runs watching tasks for rows in the half-open interval `[start, end)`:
 
 Times must use `2006-01-02 15:04:05`. The task decides which timestamp column
 to use and performs any database work; the runner passes it the table and
-range.
+range. As with `run-by-pk`, `-t` / `--task` runs only the named task:
+
+```bash
+./cdc-go-task -c config.task.yml run-by-range -t user-sync app.user \
+  "2026-10-17 00:00:00" "2026-10-18 00:00:00"
+```
 
 ### `run-all-by-range`
 
@@ -147,28 +165,29 @@ sub tables runs once per table. This is the command for a backfill that has to
 cover everything the tasks handle. Times use the same `2006-01-02 15:04:05`
 format.
 
-To leave tasks out of the run, name their main tables with `--exclude` (`-x`).
-The whole task is left out, its sub tables included, and the flag repeats:
+To leave tasks out of the run, name them with `--exclude` (`-x`). The whole task
+is left out, its sub tables included, and the flag repeats:
 
 ```bash
 ./cdc-go-task -c config.task.yml run-all-by-range \
-  "2026-10-17 00:00:00" "2026-10-18 00:00:00" --exclude app.order
+  "2026-10-17 00:00:00" "2026-10-18 00:00:00" --exclude order-sync
 ```
 
 With the checked-in configuration that runs `app.user`, `app.user_log`, and
-`app.user_token`, and leaves out `app.order` together with `app.order_item`. A
-comma-separated list works too (`-x app.order,app.user`). A name no task answers
-to is ignored, so one exclude list can be shared by configurations that declare
-different tasks.
+`app.user_token` through `user-sync`, and leaves out `app.order` together with
+`app.order_item`, which `order-sync` watches. A comma-separated list works too
+(`-x order-sync,user-sync`). A name no task answers to is ignored, so one
+exclude list can be shared by configurations that declare different tasks.
 
 ## Task configuration
 
 `config.task.yml` contains a `consumer` section and a `tasks` list. Each task
-declares one main table and zero or more related sub tables:
+has a name, and declares one main table and zero or more related sub tables:
 
 ```yaml
 tasks:
-  - main:
+  - name: user-sync
+    main:
       database: app
       name: user
       primary_key: id
@@ -178,6 +197,11 @@ tasks:
         primary_key: id
         ref_column: user_id
 ```
+
+The name is required and cannot be shared: it is what `run-by-pk -t` and
+`run-by-range -t` select a task with, and what `run-all-by-range -x` leaves one
+out by. A configuration that names a task with nothing, or gives two tasks the
+same name, is refused when the runner is built.
 
 The runner indexes these declarations when it starts. A change to `app.user`
 is routed using `id`; a change to `app.user_log` is routed using `user_id`.
@@ -207,13 +231,15 @@ The command actions and task configuration type are in
    calls `RunByPrimaryKey` on the matching task or tasks, passing the event's
    row along with the value.
 5. The manual commands build a runner without a consumer and call
-   `RunByPrimaryKey`, `RunByTimeRange`, or `RunAllByTimeRange` directly. A row
+   `RunByPrimaryKey`, `RunByTimeRange`, or `RunAllByTimeRange` directly, or
+   `RunTaskByPrimaryKey` / `RunTaskByTimeRange` when `-t` names one task. A row
    named on the command line has no change behind it, so the task receives an
-   empty `types.EventRowData`. `RunAllByTimeRange` takes the main tables of the
-   tasks to leave out, so one backfill can skip a task it does not need.
+   empty `types.EventRowData`. `RunAllByTimeRange` takes the names of the tasks
+   to leave out, so one backfill can skip a task it does not need.
 
 Tasks implement the [`task.ITask`](../../task/task.go) interface: they declare
-their main and sub tables and implement the primary-key and time-range runs.
+their name, their main and sub tables, and implement the primary-key and
+time-range runs.
 The primary-key run receives the change the run comes from as a
 `types.EventRowData`, so a task can read what happened (`Type`), the values the
 row has now (`Data`), and the ones an update moved away from (`Old`); it is

@@ -91,7 +91,7 @@ func TestLogTask_WritesTheRangeItWasRunFor(t *testing.T) {
 func TestLogTask_RunsThroughTheRunner(t *testing.T) {
 	// What it is for: the pipeline can be run before the tasks that do the work
 	// exist, and shows what would reach them.
-	tk := &LogTask{Main: tableUser, Sub: []Table{tableUserLog}}
+	tk := &LogTask{TaskName: "user-sync", Main: tableUser, Sub: []Table{tableUserLog}}
 	r := newRunner(t, nil, tk)
 	logs := capturedLogs(t)
 
@@ -131,6 +131,7 @@ func loadLogTask(t *testing.T, content string) *LogTask {
 func TestLogTask_IsReadFromAConfigurationFile(t *testing.T) {
 	tk := loadLogTask(t, `
 task:
+  name: user-sync
   main:
     database: app
     name: user
@@ -142,8 +143,9 @@ task:
       ref_column: user_id
 `)
 
-	// The tables are the ones the file names, so a task declared in a file is
-	// routed like one written in code.
+	// The name and the tables are the ones the file gives, so a task declared in a
+	// file is routed and selected like one written in code.
+	assert.Equal(t, "user-sync", tk.Name())
 	assert.Equal(t, tableUser, tk.MainTable())
 	assert.Equal(t, []Table{tableUserLog}, tk.SubTables())
 }
@@ -200,17 +202,19 @@ task:
 }
 
 func TestLogTask_WithoutASectionDeclaresNothing(t *testing.T) {
-	// A configuration that declares no task leaves the tables empty, and the task
-	// is refused by the runner rather than quietly receiving nothing at all.
+	// A configuration that declares no task leaves the name and the tables empty,
+	// and the task is refused by the runner rather than quietly receiving nothing
+	// at all: the name is what it is missing first.
 	tk := loadLogTask(t, "output:\n  type: stdout\n")
 
 	_, err := NewRunner(nil, tk)
-	assert.ErrorContains(t, err, "database and a name")
+	assert.ErrorContains(t, err, "no name")
 }
 
 func TestLogTask_ReadFromAFileRunsThroughTheRunner(t *testing.T) {
 	tk := loadLogTask(t, `
 task:
+  name: user-sync
   main:
     database: app
     name: user

@@ -485,13 +485,19 @@ Available commands:
 | Command | Description |
 | --- | --- |
 | `run` | Continuously consume events and route them to the configured tasks, which log them. This is the default command. |
-| `run-by-pk <db.table> <pk>` | Route one main-table row to the tasks watching that table. |
-| `run-by-range <db.table> <start> <end>` | Route rows in a half-open time range to the matching tasks. |
-| `run-all-by-range <start> <end>` | Route every watched table to its task for a time range. |
+| `run-by-pk <db.table> <pk>` | Route one main-table row to the tasks watching that table; `-t NAME` narrows it to one task. |
+| `run-by-range <db.table> <start> <end>` | Route rows in a half-open time range to the matching tasks; `-t NAME` narrows it to one task. |
+| `run-all-by-range <start> <end>` | Route every watched table to its task for a time range; `-x NAME` leaves a task out. |
+
+Every task in `config.task.yml` has a `name`, so two tasks watching the same
+table can be told apart.
 
 ```bash
 # One row
 ./cdc-go-task -c config.task.yml run-by-pk app.user 42
+
+# One row, through one of the tasks watching the table
+./cdc-go-task -c config.task.yml run-by-pk -t user-sync app.user 42
 
 # One day, half-open interval [start, end)
 ./cdc-go-task -c config.task.yml run-by-range app.user \

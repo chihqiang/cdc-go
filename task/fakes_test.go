@@ -2,7 +2,9 @@ package task
 
 import (
 	"context"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,8 +32,16 @@ type rangeCall struct {
 	start, end time.Time
 }
 
+// testTaskNames numbers the tasks a test does not name: the runner refuses two
+// tasks sharing a name, so every fake needs one of its own.
+var testTaskNames atomic.Int64
+
 // fakeTask records what it was run for, and reports what it is told to.
 type fakeTask struct {
+	// name is the name of the task. The tests that select a task by name set it;
+	// the others leave it empty and get a unique one when the name is first read.
+	name     string
+	nameOnce sync.Once
 	main     Table
 	subs     []Table
 	err      error
@@ -40,6 +50,15 @@ type fakeTask struct {
 	mu         sync.Mutex
 	calls      []call
 	rangeCalls []rangeCall
+}
+
+func (f *fakeTask) Name() string {
+	f.nameOnce.Do(func() {
+		if f.name == "" {
+			f.name = fmt.Sprintf("fake-%d", testTaskNames.Add(1))
+		}
+	})
+	return f.name
 }
 
 func (f *fakeTask) MainTable() Table   { return f.main }
@@ -70,6 +89,12 @@ func (f *fakeTask) recordedRanges() []rangeCall {
 	defer f.mu.Unlock()
 	return append([]rangeCall(nil), f.rangeCalls...)
 }
+
+// unnamedTask declares a table and names itself with nothing, for the test of
+// the name a task cannot do without.
+type unnamedTask struct{ fakeTask }
+
+func (u *unnamedTask) Name() string { return "" }
 
 // fakeConsumer feeds a runner the events it was given.
 type fakeConsumer struct {

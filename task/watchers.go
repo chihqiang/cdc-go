@@ -28,43 +28,58 @@ type watcher struct {
 	// main tells whether that table is the main table of the task, which is what
 	// decides between Table.PrimaryKey and Table.RefColumn.
 	main bool
-	// taskKey is the main table of the task this watcher belongs to, written as
-	// db.table: what a caller names to leave that task out of a run.
-	taskKey string
+	// taskName is the name of the task this watcher belongs to: what a caller
+	// names to run that task alone, and what leaves it out of a run over
+	// everything.
+	taskName string
 }
 
-// indexTasks Reads the tables of every task and indexes them, so that a change is
-// routed by looking its table up once.
+// indexTasks Reads the name and the tables of every task and indexes them, so
+// that a change is routed by looking its table up once, and a task is looked up
+// by its name.
 //
-// The tables are read once here, so a task that declares them cannot fail the
-// routing later.
+// The name and the tables are read once here, so a task that declares them
+// cannot fail the routing later.
 func indexTasks(tasks []ITask) (watchers, error) {
 	index := watchers{}
+	named := make(map[string]bool, len(tasks))
 	for _, t := range tasks {
+		name := t.Name()
+		if name == "" {
+			return nil, fmt.Errorf("in %T: the task has no name: the name is what a caller runs the task by, and what leaves it out of a run over everything",
+				t)
+		}
+		// Two tasks sharing a name cannot be told apart, so a run that names one
+		// of them would silently run both.
+		if named[name] {
+			return nil, fmt.Errorf("the task name %q is declared twice: a name has to name one task", name)
+		}
+		named[name] = true
+
 		main := t.MainTable()
 		if err := validateTable(main, true); err != nil {
-			return nil, fmt.Errorf("in %T: %w", t, err)
+			return nil, fmt.Errorf("in the task %q: %w", name, err)
 		}
 		mainKey := tableKeyOf(main.Database, main.Name)
-		index.add(main, watcher{task: t, table: main, main: true, taskKey: mainKey})
+		index.add(main, watcher{task: t, table: main, main: true, taskName: name})
 
 		// A table declared twice for the same task would run it twice for one
 		// change, and with two different columns to read the value from, which is
 		// never what is meant. The same table watched by two tasks is fine: that
 		// is what a fan-out is.
-		declared := map[string]bool{mainKey: true}
+		tables := map[string]bool{mainKey: true}
 
 		for _, sub := range t.SubTables() {
 			if err := validateTable(sub, false); err != nil {
-				return nil, fmt.Errorf("in %T: %w", t, err)
+				return nil, fmt.Errorf("in the task %q: %w", name, err)
 			}
 			key := tableKeyOf(sub.Database, sub.Name)
-			if declared[key] {
-				return nil, fmt.Errorf("in %T: the table %s is declared twice, so one of its changes would be run twice",
-					t, key)
+			if tables[key] {
+				return nil, fmt.Errorf("in the task %q: the table %s is declared twice, so one of its changes would be run twice",
+					name, key)
 			}
-			declared[key] = true
-			index.add(sub, watcher{task: t, table: sub, taskKey: mainKey})
+			tables[key] = true
+			index.add(sub, watcher{task: t, table: sub, taskName: name})
 		}
 	}
 	return index, nil
@@ -85,14 +100,14 @@ func (ws watchers) of(key string) []watcher {
 // exclude, ordered by table, so that a run over all of them reports its failures
 // in the same order every time.
 //
-// An entry of exclude names a task by its main table, written as db.table, and
-// leaves out that whole task: its main table and every sub table it watches. A
-// name no task answers to leaves out nothing, so a list shared between
-// configurations does not fail on a task one of them does not declare.
+// An entry of exclude names a task, and leaves out that whole task: its main
+// table and every sub table it watches. A name no task answers to leaves out
+// nothing, so a list shared between configurations does not fail on a task one
+// of them does not declare.
 func (ws watchers) all(exclude ...string) []watcher {
 	left := make(map[string]bool, len(exclude))
-	for _, key := range exclude {
-		left[key] = true
+	for _, name := range exclude {
+		left[name] = true
 	}
 
 	keys := make([]string, 0, len(ws))
@@ -104,7 +119,7 @@ func (ws watchers) all(exclude ...string) []watcher {
 	all := make([]watcher, 0, len(keys))
 	for _, key := range keys {
 		for _, w := range ws[key] {
-			if left[w.taskKey] {
+			if left[w.taskName] {
 				continue
 			}
 			all = append(all, w)
@@ -128,6 +143,45 @@ func (ws watchers) named(table string) ([]watcher, error) {
 		return nil, fmt.Errorf("no task watches the table %s", table)
 	}
 	return watchers, nil
+}
+
+// ofTask Returns the watchers of the one task a caller named, among those of
+// table, or the reason there are none.
+//
+// The task is named the way a configuration names it, and table as db.table: a
+// task running alone still needs to be told which of its tables to work on. The
+// two are reported apart, because a name nobody declares and a task that does not
+// watch the table are different mistakes.
+func (ws watchers) ofTask(taskName, table string) ([]watcher, error) {
+	watchers, err := ws.named(table)
+	if err != nil {
+		return nil, err
+	}
+	matched := make([]watcher, 0, len(watchers))
+	for _, w := range watchers {
+		if w.taskName == taskName {
+			matched = append(matched, w)
+		}
+	}
+	if len(matched) > 0 {
+		return matched, nil
+	}
+	if !ws.hasTask(taskName) {
+		return nil, fmt.Errorf("no task is named %q", taskName)
+	}
+	return nil, fmt.Errorf("the task %q does not watch the table %s", taskName, table)
+}
+
+// hasTask Reports whether any task is named name.
+func (ws watchers) hasTask(name string) bool {
+	for _, watchers := range ws {
+		for _, w := range watchers {
+			if w.taskName == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // tableKeyOf Names a table the way it is written in a configuration: db.table
@@ -219,7 +273,8 @@ func runEach(ctx context.Context, watchers []watcher, fn func(watcher) error) er
 // with what the run was about.
 func runTask(ctx context.Context, w watcher, tableKey string, row types.EventRowData, mainPkVal types.PrimaryKey) error {
 	if err := w.task.RunByPrimaryKey(ctx, w.table, row, mainPkVal); err != nil {
-		return fmt.Errorf("%T failed for the row %v of %s: %w", w.task, mainPkVal, tableKey, err)
+		return fmt.Errorf("the task %q (%T) failed for the row %v of %s: %w",
+			w.taskName, w.task, mainPkVal, tableKey, err)
 	}
 	return nil
 }
@@ -228,7 +283,8 @@ func runTask(ctx context.Context, w watcher, tableKey string, row types.EventRow
 // what it reports with what the run was about.
 func runTaskRange(ctx context.Context, w watcher, tableKey string, start, end time.Time) error {
 	if err := w.task.RunByTimeRange(ctx, w.table, start, end); err != nil {
-		return fmt.Errorf("%T failed for %s to %s of %s: %w", w.task, start, end, tableKey, err)
+		return fmt.Errorf("the task %q (%T) failed for %s to %s of %s: %w",
+			w.taskName, w.task, start, end, tableKey, err)
 	}
 	return nil
 }

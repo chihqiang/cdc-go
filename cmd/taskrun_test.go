@@ -49,8 +49,18 @@ func TestTaskRunAllByTimeRangeCommand_DeclaresItsOwnArgumentOnly(t *testing.T) {
 	// The configuration is a global flag of the root command, so the subcommand
 	// declares only what is its own.
 	assert.Len(t, c.Flags, 1)
-	assert.Equal(t, flagExcludeTable, c.Flags[0].Names()[0])
+	assert.Equal(t, flagExcludeTask, c.Flags[0].Names()[0])
 	assert.Contains(t, c.Flags[0].Names(), "x")
+}
+
+func TestTaskManualCommands_DeclareTheTaskFlag(t *testing.T) {
+	// -t/--task selects one of the tasks watching the table, which is what tells
+	// two tasks of the same table apart.
+	for _, c := range []*cli.Command{TaskRunByPrimaryKeyCommand(), TaskRunByTimeRangeCommand()} {
+		assert.Len(t, c.Flags, 1, c.Name)
+		assert.Equal(t, flagTask, c.Flags[0].Names()[0], c.Name)
+		assert.Contains(t, c.Flags[0].Names(), "t", c.Name)
+	}
 }
 
 func TestTaskSubcommands_DoNotDeclareTheConfigFlag(t *testing.T) {
@@ -104,7 +114,7 @@ func writeTaskConfig(t *testing.T, table string) string {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "tasks.yml")
-	body := "consumer:\n  type: redis\ntasks:\n  - main:\n      database: app\n      name: " + table +
+	body := "consumer:\n  type: redis\ntasks:\n  - name: " + table + "-sync\n    main:\n      database: app\n      name: " + table +
 		"\n      primary_key: id\n"
 	assert.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	return path
@@ -159,6 +169,56 @@ func TestTaskCommand_SaysWhichTimeItCouldNotRead(t *testing.T) {
 	assert.ErrorContains(t, err, "invalid start time")
 }
 
+func TestTaskCommand_RunsTheTaskItIsNamedFor(t *testing.T) {
+	path := writeTaskConfig(t, "ticket")
+	logs := logsOf(t)
+	t.Chdir(t.TempDir())
+
+	err := taskAppForTest().Run(context.Background(), []string{
+		"cdc-go-task", "-c", path, "run-by-pk", "-t", "ticket-sync", "app.ticket", "42",
+	})
+
+	assert.NoError(t, err)
+	assert.Contains(t, logs(), "running the task ticket-sync for the row 42 of app.ticket")
+}
+
+func TestTaskCommand_ReportsATaskNameItDoesNotKnow(t *testing.T) {
+	path := writeTaskConfig(t, "ticket")
+
+	err := taskAppForTest().Run(context.Background(), []string{
+		"cdc-go-task", "-c", path, "run-by-pk", "-t", "nobody", "app.ticket", "42",
+	})
+
+	assert.ErrorContains(t, err, `no task is named "nobody"`)
+}
+
+func TestTaskCommand_RunsTheTaskItIsNamedForOverARange(t *testing.T) {
+	path := writeTaskConfig(t, "ticket")
+	logs := logsOf(t)
+	t.Chdir(t.TempDir())
+
+	err := taskAppForTest().Run(context.Background(), []string{
+		"cdc-go-task", "-c", path, "run-by-range", "-t", "ticket-sync", "app.ticket",
+		"2026-10-17 00:00:00", "2026-10-18 00:00:00",
+	})
+
+	assert.NoError(t, err)
+	assert.Contains(t, logs(), "running the task ticket-sync for app.ticket from")
+}
+
+func TestTaskCommand_RunsEveryTaskOfTheTableWithoutATaskName(t *testing.T) {
+	path := writeTaskConfig(t, "ticket")
+	logs := logsOf(t)
+	t.Chdir(t.TempDir())
+
+	err := taskAppForTest().Run(context.Background(), []string{
+		"cdc-go-task", "-c", path, "run-by-pk", "app.ticket", "42",
+	})
+
+	assert.NoError(t, err)
+	assert.Contains(t, logs(), "running tasks for the row 42 of app.ticket")
+}
+
 // syncBuffer collects what the logger writes from the tasks running at the same
 // time, which is why it guards what a plain bytes.Buffer does not.
 type syncBuffer struct {
@@ -194,8 +254,8 @@ func logsOf(t *testing.T) func() string {
 // LogTask names, so a run reports which of them it reached.
 func taskConfigOf() *TaskConfig {
 	return &TaskConfig{Tasks: []task.LogTask{
-		{Main: task.Table{Database: "app", Name: "user", PrimaryKey: "id"}},
-		{Main: task.Table{Database: "app", Name: "order", PrimaryKey: "id"}},
+		{TaskName: "user-sync", Main: task.Table{Database: "app", Name: "user", PrimaryKey: "id"}},
+		{TaskName: "order-sync", Main: task.Table{Database: "app", Name: "order", PrimaryKey: "id"}},
 	}}
 }
 
@@ -203,7 +263,7 @@ func TestTaskRunAllByTimeRange_LeavesOutTheTasksItIsGiven(t *testing.T) {
 	logs := logsOf(t)
 
 	err := TaskRunAllByTimeRange(t.Context(), taskConfigOf(),
-		"2026-10-17 00:00:00", "2026-10-18 00:00:00", "app.order")
+		"2026-10-17 00:00:00", "2026-10-18 00:00:00", "order-sync")
 
 	assert.NoError(t, err)
 	assert.Contains(t, logs(), "app.user")

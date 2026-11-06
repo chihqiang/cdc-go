@@ -15,24 +15,34 @@ import (
 // at one of these shows which changes reach which table, and with which row or
 // range.
 //
-// Its tables are plain fields, so a configuration file names them and the task is
-// ready as it was read:
+// Its name and tables are plain fields, so a configuration file names them and
+// the task is ready as it was read:
 //
-//	task:
-//	  main:
-//	    database: app
-//	    name: user
-//	    primary_key: id
-//	  sub:
-//	    - database: app
-//	      name: user_log
+//	tasks:
+//	  - name: user-sync
+//	    main:
+//	      database: app
+//	      name: user
 //	      primary_key: id
-//	      ref_column: user_id
+//	    sub:
+//	      - database: app
+//	        name: user_log
+//	        primary_key: id
+//	        ref_column: user_id
 type LogTask struct {
+	// TaskName The name the task is known by, and what a caller passes to
+	// `run-by-pk -t` or `run-by-range -t` to run this task alone. Two tasks
+	// watching the same table need two names to be told apart.
+	TaskName string `json:"name"`
 	// Main The table the task works on
 	Main Table `json:"main"`
 	// Sub The tables watched because a change in them also changes a row of Main
 	Sub []Table `json:"sub"`
+}
+
+// Name Returns the name the task is known by
+func (t *LogTask) Name() string {
+	return t.TaskName
 }
 
 // MainTable Returns the table whose changes the task writes down
