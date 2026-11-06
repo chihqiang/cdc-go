@@ -1,7 +1,9 @@
-name: docker-nightly
+name: docker
 
 on:
   workflow_dispatch:
+  push:
+    tags: ["v*"]
 
 jobs:
   build-and-push:
