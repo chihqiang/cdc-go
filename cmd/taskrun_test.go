@@ -152,7 +152,7 @@ func TestTaskCommand_RunsInjectedTasksAndConsumer(t *testing.T) {
 	assert.Contains(t, output, "command run-by-range finished: duration=")
 	assert.Contains(t, output, "command run-all-by-range finished: duration=")
 	assert.NotContains(t, output, "command run finished:")
-	assert.Contains(t, output, "starting task runner with consumer *cmd.taskCommandsTestConsumer, consuming events")
+	assert.Contains(t, output, "starting task runner with consumer *cmd.taskCommandsTestConsumer and tasks [user-sync], consuming events")
 	assert.Contains(t, output, "task runner stopped")
 }
 

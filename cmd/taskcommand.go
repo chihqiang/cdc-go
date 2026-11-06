@@ -98,7 +98,12 @@ func (c *TaskCommand) runCmd() *cli.Command {
 			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			out.Infof("starting task runner with consumer %T, consuming events", c.consumer)
+			taskNames := make([]string, 0, len(c.tasks))
+			for _, registeredTask := range c.tasks {
+				taskNames = append(taskNames, registeredTask.Name())
+			}
+			out.Infof("starting task runner with consumer %T and tasks [%s], consuming events",
+				c.consumer, strings.Join(taskNames, ", "))
 			err = runner.Run(ctx)
 			if err != nil && ctx.Err() == nil {
 				out.Errorf("task runner stopped with error: %v", err)
