@@ -12,8 +12,8 @@ import (
 // Config defines the global configuration structure
 // It is used to load all configuration items for the application from the configuration file
 type Config struct {
-	Store  store.Config  `json:"store"`
-	Source source.Config `json:"source"`
+	Store    store.Config    `json:"store"`
+	Source   source.Config   `json:"source"`
 	Producer producer.Config `json:"producer"`
 }
 

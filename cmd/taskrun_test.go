@@ -375,7 +375,7 @@ func stdoutOf(t *testing.T, run func()) string {
 	run()
 	os.Stdout = originalStdout
 	assert.NoError(t, writer.Close())
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	output, err := io.ReadAll(reader)
 	assert.NoError(t, err)

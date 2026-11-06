@@ -18,24 +18,30 @@ build-task:
 # make build-all APP_VERSION=v1.0.0
 build-all: build build-task
 
+# `go install` writes to GOBIN (GOPATH/bin when GOBIN is unset), which is often
+# missing from PATH, so each tool is resolved to an absolute path before it runs.
 check:
 	@echo "Running linters..."
-	@if ! command -v golangci-lint >/dev/null 2>&1; then \
+	@bin="$$(go env GOBIN)"; [ -n "$$bin" ] || bin="$$(go env GOPATH)/bin"; \
+	lint="$$(command -v golangci-lint || echo "$$bin/golangci-lint")"; \
+	if [ ! -x "$$lint" ]; then \
 		echo "Installing golangci-lint..."; \
 		go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.3.1; \
 	else \
 		echo "golangci-lint already installed, skipping..."; \
-	fi
-	golangci-lint run ./...
+	fi; \
+	"$$lint" run -D staticcheck ./...
 	@echo "Linting passed"
 
-	@if ! command -v errcheck >/dev/null 2>&1; then \
+	@bin="$$(go env GOBIN)"; [ -n "$$bin" ] || bin="$$(go env GOPATH)/bin"; \
+	check="$$(command -v errcheck || echo "$$bin/errcheck")"; \
+	if [ ! -x "$$check" ]; then \
 		echo "Installing errcheck..."; \
-		go install github.com/kisielk/errcheck@latest; \
+		go install github.com/kisielk/errcheck@v1.20.0; \
 	else \
 		echo "errcheck already installed, skipping..."; \
-	fi
-	errcheck ./...
+	fi; \
+	"$$check" ./...
 	@echo "Error checks passed"
 
 	@find . -name "*.go" -exec go fmt {} \;

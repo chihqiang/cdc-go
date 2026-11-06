@@ -91,9 +91,9 @@ func (r *RedisConsumer) Consume(ctx context.Context, handler Handler) error {
 			return err
 		}
 
-	// BRPOP answers with the key and the value that was popped; the oldest
-	// value comes first, which is what pairs it with the LPUSH of the
-	// producer.
+		// BRPOP answers with the key and the value that was popped; the oldest
+		// value comes first, which is what pairs it with the LPUSH of the
+		// producer.
 		values, err := r.rdb.BRPop(ctx, r.timeout, r.cfg.Key).Result()
 		if err != nil {
 			switch {

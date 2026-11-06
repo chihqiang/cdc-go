@@ -44,7 +44,7 @@ func TestRedisStore_SetGet(t *testing.T) {
 
 	rs, err := NewRedisStore(RedisConfig{Addr: mr.Addr()})
 	assert.NoError(t, err)
-	defer rs.Close()
+	defer func() { _ = rs.Close() }()
 
 	err = rs.Set("key1", []byte("value1"))
 	assert.NoError(t, err)
@@ -60,7 +60,7 @@ func TestRedisStore_Get_NonExistent(t *testing.T) {
 	defer mr.Close()
 
 	rs, _ := NewRedisStore(RedisConfig{Addr: mr.Addr()})
-	defer rs.Close()
+	defer func() { _ = rs.Close() }()
 
 	_, err = rs.Get("no-such-key")
 	assert.Error(t, err)
@@ -73,7 +73,7 @@ func TestRedisStore_Has(t *testing.T) {
 	defer mr.Close()
 
 	rs, _ := NewRedisStore(RedisConfig{Addr: mr.Addr()})
-	defer rs.Close()
+	defer func() { _ = rs.Close() }()
 
 	_ = rs.Set("exists", []byte("data"))
 	assert.True(t, rs.Has("exists"))
@@ -97,7 +97,7 @@ func TestRedisStore_Delete(t *testing.T) {
 	defer mr.Close()
 
 	rs, _ := NewRedisStore(RedisConfig{Addr: mr.Addr()})
-	defer rs.Close()
+	defer func() { _ = rs.Close() }()
 
 	_ = rs.Set("key1", []byte("v1"))
 	assert.True(t, rs.Has("key1"))
@@ -113,7 +113,7 @@ func TestRedisStore_Delete_NonExistent(t *testing.T) {
 	defer mr.Close()
 
 	rs, _ := NewRedisStore(RedisConfig{Addr: mr.Addr()})
-	defer rs.Close()
+	defer func() { _ = rs.Close() }()
 
 	// Deleting a key that doesn't exist should not error.
 	err = rs.Delete("no-such-key")
