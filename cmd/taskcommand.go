@@ -24,7 +24,7 @@ type TaskCommand struct {
 }
 
 // NewTaskCommand creates a task command set. Supply its consumer and tasks with
-// SetConsumer and SetTasks before running the returned commands.
+// SetConsumer and AppendTasks before running the returned commands.
 func NewTaskCommand() *TaskCommand {
 	c := &TaskCommand{}
 	c.commands = []*cli.Command{
@@ -36,17 +36,38 @@ func NewTaskCommand() *TaskCommand {
 	return c
 }
 
-// SetConsumer supplies the consumer used by the run command.
+// SetConsumer supplies or replaces the consumer used by the run command.
 func (c *TaskCommand) SetConsumer(eventConsumer consumer.IConsumer) {
 	c.consumer = eventConsumer
 }
 
-// SetTasks validates and supplies the tasks used by all commands.
-func (c *TaskCommand) SetTasks(tasks ...task.ITask) error {
-	if _, err := task.NewRunner(nil, tasks...); err != nil {
-		return fmt.Errorf("failed to set task command tasks: %w", err)
+// AppendTasks validates and appends tasks used by the commands.
+func (c *TaskCommand) AppendTasks(tasks ...task.ITask) error {
+	combinedTasks := append(append([]task.ITask(nil), c.tasks...), tasks...)
+	if _, err := task.NewRunner(nil, combinedTasks...); err != nil {
+		return fmt.Errorf("failed to append task command tasks: %w", err)
 	}
-	c.tasks = append([]task.ITask(nil), tasks...)
+	c.tasks = combinedTasks
+	return nil
+}
+
+// AppendCommands appends commands to the command set.
+func (c *TaskCommand) AppendCommands(commands ...*cli.Command) error {
+	for _, command := range commands {
+		if command == nil {
+			return fmt.Errorf("cannot append a nil command")
+		}
+	}
+	c.commands = append(c.commands, commands...)
+	return nil
+}
+
+// SetDependencies supplies or replaces the consumer and appends validated tasks.
+func (c *TaskCommand) SetDependencies(eventConsumer consumer.IConsumer, tasks ...task.ITask) error {
+	if err := c.AppendTasks(tasks...); err != nil {
+		return err
+	}
+	c.SetConsumer(eventConsumer)
 	return nil
 }
 
@@ -60,7 +81,28 @@ func (c *TaskCommand) runCmd() *cli.Command {
 		Name:  "run",
 		Usage: "Consume CDC events from the middleware and execute the injected tasks",
 		Action: func(ctx context.Context, _ *cli.Input, _ *cli.Output) error {
-			return c.runTaskRunner(ctx)
+			if c.consumer == nil {
+				return fmt.Errorf("run requires a consumer")
+			}
+			runner, err := c.newRunner(c.consumer)
+			if err != nil {
+				return err
+			}
+
+			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+			defer stop()
+
+			logx.Info("starting task runner, consuming events")
+			err = runner.Run(ctx)
+			if err != nil && ctx.Err() == nil {
+				logx.Error("task runner stopped with error: %v", err)
+			} else {
+				logx.Info("task runner stopped")
+			}
+			if cerr := runner.Close(); cerr != nil {
+				logx.Error("failed to close runner: %v", cerr)
+			}
+			return err
 		},
 	}
 }
@@ -159,31 +201,6 @@ func (c *TaskCommand) newRunner(eventConsumer consumer.IConsumer) (*task.Runner,
 		return nil, fmt.Errorf("failed to create task runner: %w", err)
 	}
 	return runner, nil
-}
-
-func (c *TaskCommand) runTaskRunner(ctx context.Context) error {
-	if c.consumer == nil {
-		return fmt.Errorf("run requires a consumer")
-	}
-	runner, err := c.newRunner(c.consumer)
-	if err != nil {
-		return err
-	}
-
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	logx.Info("starting task runner, consuming events")
-	err = runner.Run(ctx)
-	if err != nil && ctx.Err() == nil {
-		logx.Error("task runner stopped with error: %v", err)
-	} else {
-		logx.Info("task runner stopped")
-	}
-	if cerr := runner.Close(); cerr != nil {
-		logx.Error("failed to close runner: %v", cerr)
-	}
-	return err
 }
 
 const rangeLayout = "2006-01-02 15:04:05"

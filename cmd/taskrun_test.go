@@ -79,8 +79,7 @@ func TestTaskCommand_RunsInjectedTasksAndConsumer(t *testing.T) {
 	logs := logsOf(t)
 	eventConsumer := &taskCommandsTestConsumer{}
 	command := NewTaskCommand()
-	command.SetConsumer(eventConsumer)
-	err := command.SetTasks(
+	err := command.SetDependencies(eventConsumer,
 		&task.LogTask{
 			TaskName: "user-sync",
 			Main:     task.Table{Database: "app", Name: "user", PrimaryKey: "id"},
@@ -109,9 +108,56 @@ func TestTaskCommand_RunsInjectedTasksAndConsumer(t *testing.T) {
 	assert.Contains(t, logs(), "app.user_log from")
 }
 
+func TestTaskCommand_AppendTasksAppendsTasks(t *testing.T) {
+	logs := logsOf(t)
+	command := NewTaskCommand()
+	assert.NoError(t, command.AppendTasks(logTask("user-sync", "user")))
+	assert.NoError(t, command.AppendTasks(logTask("order-sync", "order")))
+
+	app := appForTaskCommand(command)
+	assert.NoError(t, app.Run(context.Background(), []string{
+		"external-app", "run-by-pk", "user-sync", "42",
+	}))
+	assert.NoError(t, app.Run(context.Background(), []string{
+		"external-app", "run-by-pk", "order-sync", "42",
+	}))
+
+	assert.Contains(t, logs(), "app.user")
+	assert.Contains(t, logs(), "app.order")
+}
+
+func TestTaskCommand_SetConsumerReplacesConsumer(t *testing.T) {
+	firstConsumer := &taskCommandsTestConsumer{}
+	secondConsumer := &taskCommandsTestConsumer{}
+	command := NewTaskCommand()
+	assert.NoError(t, command.AppendTasks(logTask("user-sync", "user")))
+	command.SetConsumer(firstConsumer)
+	command.SetConsumer(secondConsumer)
+
+	assert.NoError(t, appForTaskCommand(command).Run(context.Background(), []string{"external-app", "run"}))
+
+	assert.False(t, firstConsumer.consumed)
+	assert.True(t, secondConsumer.consumed)
+	assert.True(t, secondConsumer.closed)
+}
+
+func TestTaskCommand_AppendCommands(t *testing.T) {
+	command := NewTaskCommand()
+	customCommand := &cli.Command{Name: "custom"}
+
+	assert.NoError(t, command.AppendCommands(customCommand))
+
+	commands := command.Commands()
+	assert.Len(t, commands, 5)
+	assert.Same(t, customCommand, commands[4])
+
+	assert.ErrorContains(t, command.AppendCommands(nil), "nil command")
+	assert.Len(t, command.Commands(), 5)
+}
+
 func TestTaskCommand_ReportsInvalidTaskDeclaration(t *testing.T) {
 	command := NewTaskCommand()
-	err := command.SetTasks(&task.LogTask{
+	err := command.SetDependencies(nil, &task.LogTask{
 		Main: task.Table{Database: "app", Name: "user", PrimaryKey: "id"},
 	})
 
@@ -120,7 +166,7 @@ func TestTaskCommand_ReportsInvalidTaskDeclaration(t *testing.T) {
 
 func TestTaskCommand_ReportsMissingConsumerForRun(t *testing.T) {
 	command := NewTaskCommand()
-	assert.NoError(t, command.SetTasks(logTask("user-sync", "user")))
+	assert.NoError(t, command.SetDependencies(nil, logTask("user-sync", "user")))
 
 	err := appForTaskCommand(command).Run(context.Background(), []string{"external-app", "run"})
 
@@ -129,7 +175,7 @@ func TestTaskCommand_ReportsMissingConsumerForRun(t *testing.T) {
 
 func TestTaskCommand_ReportsMissingArgumentsAndUnknownTasks(t *testing.T) {
 	command := NewTaskCommand()
-	assert.NoError(t, command.SetTasks(logTask("user-sync", "user")))
+	assert.NoError(t, command.SetDependencies(nil, logTask("user-sync", "user")))
 	app := appForTaskCommand(command)
 
 	err := app.Run(context.Background(), []string{"external-app", "run-by-pk", "42"})
@@ -147,7 +193,7 @@ func TestTaskCommand_ReportsMissingArgumentsAndUnknownTasks(t *testing.T) {
 func TestTaskCommand_RunsAllExceptExcludedTasks(t *testing.T) {
 	logs := logsOf(t)
 	command := NewTaskCommand()
-	err := command.SetTasks(
+	err := command.SetDependencies(nil,
 		logTask("user-sync", "user"),
 		logTask("order-sync", "order"),
 	)
@@ -216,7 +262,7 @@ func yamlTaskAppForTest() *cli.Command {
 		if err != nil {
 			return ctx, err
 		}
-		if err := taskCommand.SetTasks(cfg.BuildTasks()...); err != nil {
+		if err := taskCommand.SetDependencies(nil, cfg.BuildTasks()...); err != nil {
 			return ctx, err
 		}
 		return ctx, nil

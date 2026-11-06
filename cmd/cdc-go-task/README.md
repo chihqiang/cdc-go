@@ -253,11 +253,14 @@ consumer and `task.ITask` implementations:
 ```go
 taskCommand := cmd.NewTaskCommand()
 taskCommand.SetConsumer(eventConsumer)
-if err := taskCommand.SetTasks(userSyncTask, userAuditTask); err != nil {
+if err := taskCommand.AppendTasks(userSyncTask, userAuditTask); err != nil {
 	return err
 }
 
-app.Subcommands = append(app.Subcommands, taskCommand.Commands()...)
+if err := taskCommand.AppendCommands(customCommand); err != nil {
+	return err
+}
+app.Subcommands = taskCommand.Commands()
 ```
 
 `TaskCommand` provides `run`, `run-by-pk`, `run-by-range` and

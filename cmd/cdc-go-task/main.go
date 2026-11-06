@@ -37,21 +37,20 @@ func main() {
 		if err != nil {
 			return ctx, err
 		}
-		if err := taskCommand.SetTasks(cfg.BuildTasks()...); err != nil {
+		if err := taskCommand.AppendTasks(cfg.BuildTasks()...); err != nil {
 			return ctx, err
 		}
-
-		if in.Args().First() == "" || in.Args().First() == "run" {
-			eventConsumer, err := consumer.NewConsumer(cfg.Consumer)
-			if err != nil {
-				return ctx, err
-			}
-			taskCommand.SetConsumer(eventConsumer)
+		if in.Args().First() != "" && in.Args().First() != "run" {
+			return ctx, nil
 		}
+		eventConsumer, err := consumer.NewConsumer(cfg.Consumer)
+		if err != nil {
+			return ctx, err
+		}
+		taskCommand.SetConsumer(eventConsumer)
 		return ctx, nil
 	}
 	app.Subcommands = taskCommand.Commands()
-	// Default action is "run" when no subcommand is given.
 	app.Action = app.Subcommands[0].Action
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
