@@ -59,7 +59,7 @@ func TestRedisProducer_Send_Success(t *testing.T) {
 		Addr: mr.Addr(),
 		Key:  "test-events",
 	})
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	event := types.EventData{
 		Time:     time.Now(),
@@ -90,7 +90,7 @@ func TestRedisProducer_Send_InvalidJSON(t *testing.T) {
 		Addr: mr.Addr(),
 		Key:  "test-events",
 	})
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	event := types.EventData{
 		Row: types.EventRowData{

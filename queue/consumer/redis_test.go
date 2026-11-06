@@ -228,7 +228,7 @@ func TestRedisConsumer_Consume_DropsPayloadsThatAreNotEvents(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the valid event behind the invalid one was never handled")
 	}
-	<-consumed
+	assert.ErrorIs(t, <-consumed, context.Canceled)
 }
 
 func TestRedisConsumer_Consume_ReturnsNilWhenClosed(t *testing.T) {

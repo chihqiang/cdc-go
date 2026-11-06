@@ -266,7 +266,7 @@ func TestKafkaConsumer_Consume_DropsAndCommitsUndecodablePayloads(t *testing.T) 
 	case <-time.After(5 * time.Second):
 		t.Fatal("the valid message behind the invalid one was never handled")
 	}
-	<-consumed
+	assert.ErrorIs(t, <-consumed, context.Canceled)
 
 	// A payload that cannot be decoded is dropped for good, otherwise it would be
 	// read again on every restart without ever getting further.
@@ -295,7 +295,7 @@ func TestKafkaConsumer_Consume_WithoutAGroupCommitsNothing(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the message was never handled")
 	}
-	<-consumed
+	assert.ErrorIs(t, <-consumed, context.Canceled)
 
 	assert.Empty(t, reader.committedOffsets())
 }

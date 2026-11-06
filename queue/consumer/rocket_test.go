@@ -254,7 +254,7 @@ func TestRocketMQConsumer_Consume_AcknowledgesHandledMessages(t *testing.T) {
 	assert.Equal(t, "users", handled.Row.Table)
 
 	cancel()
-	<-done
+	assert.ErrorIs(t, <-done, context.Canceled)
 }
 
 func TestRocketMQConsumer_Consume_RetriesARejectedMessage(t *testing.T) {
@@ -278,7 +278,7 @@ func TestRocketMQConsumer_Consume_RetriesARejectedMessage(t *testing.T) {
 	assert.Equal(t, consumer.ConsumeRetryLater, result)
 
 	cancel()
-	<-done
+	assert.ErrorIs(t, <-done, context.Canceled)
 }
 
 func TestRocketMQConsumer_Consume_RetriesABatchHoldingARejectedMessage(t *testing.T) {
@@ -310,7 +310,7 @@ func TestRocketMQConsumer_Consume_RetriesABatchHoldingARejectedMessage(t *testin
 	assert.Equal(t, consumer.ConsumeRetryLater, result)
 
 	cancel()
-	<-done
+	assert.ErrorIs(t, <-done, context.Canceled)
 }
 
 func TestRocketMQConsumer_Consume_AcknowledgesUndecodablePayloads(t *testing.T) {
@@ -339,7 +339,7 @@ func TestRocketMQConsumer_Consume_AcknowledgesUndecodablePayloads(t *testing.T) 
 	assert.False(t, called, "the handler must not see a payload that does not decode")
 
 	cancel()
-	<-done
+	assert.ErrorIs(t, <-done, context.Canceled)
 }
 
 func TestRocketMQConsumer_Consume_ReturnsNilWhenClosed(t *testing.T) {

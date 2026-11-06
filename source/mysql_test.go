@@ -675,7 +675,7 @@ func TestOnRow_DefaultAction(t *testing.T) {
 
 func TestOnRow_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	ch := make(chan types.EventData, 0) // unbuffered so it blocks
+	ch := make(chan types.EventData) // unbuffered so it blocks
 	s := &MySQLSource{eventDataChan: ch, runCtx: ctx}
 
 	table := &schema.Table{

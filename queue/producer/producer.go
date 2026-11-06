@@ -20,7 +20,7 @@ var (
 	ProducerTypeRabbitMQ ProducerType = "rabbitmq"
 	ProducerTypeRocketMQ ProducerType = "rocketmq"
 	ProducerTypePulsar   ProducerType = "pulsar"
-	producers                       = map[ProducerType]func(Config) (IProducer, error){}
+	producers                         = map[ProducerType]func(Config) (IProducer, error){}
 )
 
 func init() {
@@ -49,7 +49,7 @@ func Register(producerType ProducerType, fn func(Config) (IProducer, error)) {
 }
 
 type Config struct {
-	Type     ProducerType     `json:"type,required"`
+	Type     ProducerType   `json:"type,required"`
 	Redis    RedisConfig    `json:"redis"`
 	Kafka    KafkaConfig    `json:"kafka"`
 	RabbitMQ RabbitMQConfig `json:"rabbitmq"`
