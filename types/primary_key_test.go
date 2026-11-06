@@ -46,6 +46,7 @@ func TestPrimaryKey_WritesTheKeyAsText(t *testing.T) {
 		{value: []byte("abc"), want: "abc"},
 		{value: int64(42), want: "42"},
 		{value: float64(42), want: "42"},
+		{value: float64(6393046), want: "6393046"},
 		{value: json.Number("42"), want: "42"},
 		{value: true, want: "true"},
 	} {
