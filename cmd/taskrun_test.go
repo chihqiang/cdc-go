@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -88,17 +89,19 @@ func TestTaskCommand_RunsInjectedTasksAndConsumer(t *testing.T) {
 	assert.NoError(t, err)
 	app := appForTaskCommand(command)
 
-	assert.NoError(t, app.Run(context.Background(), []string{
-		"external-app", "run-by-pk", "user-sync", "42",
-	}))
-	assert.NoError(t, app.Run(context.Background(), []string{
-		"external-app", "run-by-range", "user-sync",
-		"2026-10-17 00:00:00", "2026-10-18 00:00:00",
-	}))
-	assert.NoError(t, app.Run(context.Background(), []string{
-		"external-app", "run-all-by-range",
-		"2026-10-17 00:00:00", "2026-10-18 00:00:00",
-	}))
+	stats := stdoutOf(t, func() {
+		assert.NoError(t, app.Run(context.Background(), []string{
+			"external-app", "run-by-pk", "user-sync", "42",
+		}))
+		assert.NoError(t, app.Run(context.Background(), []string{
+			"external-app", "run-by-range", "user-sync",
+			"2026-10-17 00:00:00", "2026-10-18 00:00:00",
+		}))
+		assert.NoError(t, app.Run(context.Background(), []string{
+			"external-app", "run-all-by-range",
+			"2026-10-17 00:00:00", "2026-10-18 00:00:00",
+		}))
+	})
 	assert.NoError(t, app.Run(context.Background(), []string{"external-app", "run"}))
 
 	assert.True(t, eventConsumer.consumed)
@@ -106,6 +109,12 @@ func TestTaskCommand_RunsInjectedTasksAndConsumer(t *testing.T) {
 	assert.Contains(t, logs(), "the row 42 of app.user")
 	assert.Contains(t, logs(), "app.user from")
 	assert.Contains(t, logs(), "app.user_log from")
+	assert.Contains(t, stats, "command run-by-pk finished: duration=")
+	assert.Contains(t, stats, "allocated=")
+	assert.Contains(t, stats, "heap-in-use=")
+	assert.Contains(t, stats, "command run-by-range finished: duration=")
+	assert.Contains(t, stats, "command run-all-by-range finished: duration=")
+	assert.NotContains(t, stats, "command run finished:")
 }
 
 func TestTaskCommand_AppendTasksAppendsTasks(t *testing.T) {
@@ -312,4 +321,24 @@ func logsOf(t *testing.T) func() string {
 	t.Cleanup(func() { logx.SetOutput(os.Stderr) })
 
 	return written.String
+}
+
+func stdoutOf(t *testing.T, run func()) string {
+	t.Helper()
+
+	reader, writer, err := os.Pipe()
+	if !assert.NoError(t, err) {
+		return ""
+	}
+	originalStdout := os.Stdout
+	os.Stdout = writer
+	defer func() { os.Stdout = originalStdout }()
+	run()
+	os.Stdout = originalStdout
+	assert.NoError(t, writer.Close())
+	defer reader.Close()
+
+	output, err := io.ReadAll(reader)
+	assert.NoError(t, err)
+	return string(output)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -14,6 +15,11 @@ import (
 	"github.com/chihqiang/cdc-go/types"
 	"github.com/chihqiang/cli"
 	"github.com/chihqiang/logx"
+)
+
+const (
+	flagExclude = "exclude"
+	rangeLayout = "2006-01-02 15:04:05"
 )
 
 // TaskCommand builds commands for injected tasks and a consumer.
@@ -80,11 +86,11 @@ func (c *TaskCommand) runCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "run",
 		Usage: "Consume CDC events from the middleware and execute the injected tasks",
-		Action: func(ctx context.Context, _ *cli.Input, _ *cli.Output) error {
+		Action: func(ctx context.Context, _ *cli.Input, out *cli.Output) error {
 			if c.consumer == nil {
 				return fmt.Errorf("run requires a consumer")
 			}
-			runner, err := c.newRunner(c.consumer)
+			runner, err := c.newRunner(c.consumer, out)
 			if err != nil {
 				return err
 			}
@@ -100,7 +106,7 @@ func (c *TaskCommand) runCmd() *cli.Command {
 				logx.Info("task runner stopped")
 			}
 			if cerr := runner.Close(); cerr != nil {
-				logx.Error("failed to close runner: %v", cerr)
+				out.Errorf("failed to close runner: %v", cerr)
 			}
 			return err
 		},
@@ -112,19 +118,19 @@ func (c *TaskCommand) runByPkCmd() *cli.Command {
 		Name:      "run-by-pk",
 		Usage:     "Execute one task for a row of its main table",
 		ArgsUsage: "<task-name> <primary-key-value>",
-		Action: func(ctx context.Context, in *cli.Input, _ *cli.Output) error {
+		Action: c.withExecutionStats("run-by-pk", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			args := in.Args()
 			if args.Len() < 2 {
 				return fmt.Errorf("usage: run-by-pk <task-name> <primary-key-value>")
 			}
-			runner, err := c.newRunner(nil)
+			runner, err := c.newRunner(nil, out)
 			if err != nil {
 				return err
 			}
 
-			logx.Info("running the task %s for the row %s of its main table", args.First(), args.Get(1))
+			out.Infof("running the task %s for the row %s of its main table", args.First(), args.Get(1))
 			return runner.RunTaskByPrimaryKey(ctx, args.First(), types.EventRowData{}, types.NewPrimaryKey(args.Get(1)))
-		},
+		}),
 	}
 }
 
@@ -133,7 +139,7 @@ func (c *TaskCommand) runByRangeCmd() *cli.Command {
 		Name:      "run-by-range",
 		Usage:     "Execute one task for rows of its main table in a time range",
 		ArgsUsage: "<task-name> <start> <end>",
-		Action: func(ctx context.Context, in *cli.Input, _ *cli.Output) error {
+		Action: c.withExecutionStats("run-by-range", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			args := in.Args()
 			if args.Len() < 3 {
 				return fmt.Errorf("usage: run-by-range <task-name> <start> <end>  (time format: %s)", rangeLayout)
@@ -142,14 +148,14 @@ func (c *TaskCommand) runByRangeCmd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			runner, err := c.newRunner(nil)
+			runner, err := c.newRunner(nil, out)
 			if err != nil {
 				return err
 			}
 
-			logx.Info("running the task %s for its main table from %s to %s", args.First(), start, end)
+			out.Infof("running the task %s for its main table from %s to %s", args.First(), start, end)
 			return runner.RunTaskByTimeRange(ctx, args.First(), start, end)
-		},
+		}),
 	}
 }
 
@@ -165,7 +171,7 @@ func (c *TaskCommand) runAllByRangeCmd() *cli.Command {
 				"a comma-separated list to leave out several",
 			DefaultText: "none",
 		}},
-		Action: func(ctx context.Context, in *cli.Input, _ *cli.Output) error {
+		Action: c.withExecutionStats("run-all-by-range", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			args := in.Args()
 			if args.Len() < 2 {
 				return fmt.Errorf("usage: run-all-by-range <start> <end>  (time format: %s)", rangeLayout)
@@ -174,36 +180,54 @@ func (c *TaskCommand) runAllByRangeCmd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			runner, err := c.newRunner(nil)
+			runner, err := c.newRunner(nil, out)
 			if err != nil {
 				return err
 			}
 			exclude := in.StringSlice(flagExclude)
 			if len(exclude) > 0 {
-				logx.Info("running the tasks from %s to %s, leaving out %s",
+				out.Infof("running the tasks from %s to %s, leaving out %s",
 					start, end, strings.Join(exclude, ", "))
 			} else {
-				logx.Info("running all %d task(s) from %s to %s", len(c.tasks), start, end)
+				out.Infof("running all %d task(s) from %s to %s", len(c.tasks), start, end)
 			}
 			return runner.RunAllByTimeRange(ctx, start, end, exclude...)
-		},
+		}),
 	}
 }
 
-func (c *TaskCommand) newRunner(eventConsumer consumer.IConsumer) (*task.Runner, error) {
+func (c *TaskCommand) withExecutionStats(name string, action func(context.Context, *cli.Input, *cli.Output) error) func(context.Context, *cli.Input, *cli.Output) error {
+	return func(ctx context.Context, in *cli.Input, out *cli.Output) error {
+		start := time.Now()
+		var before runtime.MemStats
+		runtime.ReadMemStats(&before)
+		defer func() {
+			var after runtime.MemStats
+			runtime.ReadMemStats(&after)
+			out.Infof("command %s finished: duration=%s, allocated=%d bytes, heap-in-use=%d bytes (change=%+d bytes)",
+				name,
+				time.Since(start).Round(time.Millisecond),
+				after.TotalAlloc-before.TotalAlloc,
+				after.HeapAlloc,
+				int64(after.HeapAlloc)-int64(before.HeapAlloc),
+			)
+		}()
+		return action(ctx, in, out)
+	}
+}
+
+func (c *TaskCommand) newRunner(eventConsumer consumer.IConsumer, out *cli.Output) (*task.Runner, error) {
 	runner, err := task.NewRunner(eventConsumer, c.tasks...)
 	if err != nil {
 		if eventConsumer != nil {
 			if cerr := eventConsumer.Close(); cerr != nil {
-				logx.Error("failed to close consumer after runner creation error: %v", cerr)
+				out.Errorf("failed to close consumer after runner creation error: %v", cerr)
 			}
 		}
 		return nil, fmt.Errorf("failed to create task runner: %w", err)
 	}
 	return runner, nil
 }
-
-const rangeLayout = "2006-01-02 15:04:05"
 
 func (c *TaskCommand) parseRange(startStr, endStr string) (time.Time, time.Time, error) {
 	start, err := time.Parse(rangeLayout, startStr)

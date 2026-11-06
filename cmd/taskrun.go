@@ -9,10 +9,7 @@ import (
 	"github.com/chihqiang/readin"
 )
 
-const (
-	TaskConfigFlag = "task-config"
-	flagExclude    = "exclude"
-)
+const TaskConfigFlag = "task-config"
 
 // TaskConfig is the YAML configuration used by cdc-go-task.
 type TaskConfig struct {
