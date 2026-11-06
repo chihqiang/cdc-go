@@ -66,6 +66,10 @@ func (k PrimaryKey) String() string {
 		return string(value)
 	case json.Number:
 		return value.String()
+	case float64:
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(value), 'f', -1, 32)
 	default:
 		return fmt.Sprint(value)
 	}
