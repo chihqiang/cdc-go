@@ -108,28 +108,31 @@ Environment references in either configuration use `${VAR}` or
 
 ### `run-by-pk`
 
-Runs watching tasks for one main-table row:
+Runs the named task for one row of its main table. The first argument is the
+task name from the configuration, not a table name:
 
 ```bash
-./cdc-go-task -c config.task.yml run-by-pk app.user 42
+./cdc-go-task -c config.task.yml run-by-pk user-sync 42
 ```
 
-The table must be written as `database.table`. For a main table, the value is
-its `primary_key`. For a sub table, the value is the owning main row's
-`ref_column` value. For example, `app.user_log 42` runs the task for user 42.
+The primary-key value is for the task's main table. For a task whose main table
+is `app.user`, `user-sync 42` runs that task for user 42, whether or not it also
+watches sub tables. To run every task watching the same table, name each task
+separately.
 
 ### `run-by-range`
 
-Runs watching tasks for rows in the half-open interval `[start, end)`:
+Runs the named task for rows of its main table in the half-open interval
+`[start, end)`:
 
 ```bash
-./cdc-go-task -c config.task.yml run-by-range app.user \
+./cdc-go-task -c config.task.yml run-by-range user-sync \
   "2026-10-17 00:00:00" "2026-10-18 00:00:00"
 ```
 
 Times must use `2006-01-02 15:04:05`. The task decides which timestamp column
-to use and performs any database work; the runner passes it the table and
-range.
+to use and performs any database work; the runner passes it its main table and
+the range. Sub tables are processed by `run-all-by-range`.
 
 ### `run-all-by-range`
 
@@ -147,28 +150,29 @@ sub tables runs once per table. This is the command for a backfill that has to
 cover everything the tasks handle. Times use the same `2006-01-02 15:04:05`
 format.
 
-To leave tasks out of the run, name their main tables with `--exclude` (`-x`).
-The whole task is left out, its sub tables included, and the flag repeats:
+To leave tasks out of the run, name them with `--exclude` (`-x`). The whole task
+is left out, its sub tables included, and the flag repeats:
 
 ```bash
 ./cdc-go-task -c config.task.yml run-all-by-range \
-  "2026-10-17 00:00:00" "2026-10-18 00:00:00" --exclude app.order
+  "2026-10-17 00:00:00" "2026-10-18 00:00:00" --exclude order-sync
 ```
 
 With the checked-in configuration that runs `app.user`, `app.user_log`, and
-`app.user_token`, and leaves out `app.order` together with `app.order_item`. A
-comma-separated list works too (`-x app.order,app.user`). A name no task answers
-to is ignored, so one exclude list can be shared by configurations that declare
-different tasks.
+`app.user_token` through `user-sync`, and leaves out `app.order` together with
+`app.order_item`, which `order-sync` watches. A comma-separated list works too
+(`-x order-sync,user-sync`). A name no task answers to is ignored, so one
+exclude list can be shared by configurations that declare different tasks.
 
 ## Task configuration
 
 `config.task.yml` contains a `consumer` section and a `tasks` list. Each task
-declares one main table and zero or more related sub tables:
+has a name, and declares one main table and zero or more related sub tables:
 
 ```yaml
 tasks:
-  - main:
+  - name: user-sync
+    main:
       database: app
       name: user
       primary_key: id
@@ -179,6 +183,11 @@ tasks:
         ref_column: user_id
 ```
 
+The name is required and cannot be shared: it is what `run-by-pk` and
+`run-by-range` select a task with, and what `run-all-by-range -x` leaves one out
+by. A configuration that names a task with nothing, or gives two tasks the
+same name, is refused when the runner is built.
+
 The runner indexes these declarations when it starts. A change to `app.user`
 is routed using `id`; a change to `app.user_log` is routed using `user_id`.
 The event's `data` must contain the relevant key. Tables that no task watches
@@ -187,33 +196,36 @@ are ignored.
 ## Implementation
 
 The executable entry point is [`main.go`](./main.go). It creates the CLI
-commands, attaches the task configuration flag and the `Before` hook, and
-installs SIGINT/SIGTERM cancellation.
+commands and attaches the task configuration flag. Its `Before` hook loads the
+YAML file and supplies the tasks to `TaskCommand`; it creates the consumer only
+for the continuous `run` command.
 
-The command actions and task configuration type are in
-[`../taskrun.go`](../taskrun.go):
+The YAML configuration type and loader are in [`../taskrun.go`](../taskrun.go).
+The command actions are in [`../taskcommand.go`](../taskcommand.go):
 
-1. `TaskBefore` is the root `Before` hook: `loadTaskConfig` reads the YAML file
-   with environment expansion once per invocation, and the configuration is put
-   in the context. Every command takes it from there with
-   `TaskConfigFromContext`, so the file is read once and the flag is declared
-   only on the root command.
-2. `TaskConfig.BuildTasks` turns the configured task definitions into
+1. `LoadTaskConfig` reads the YAML file with environment expansion once per
+   invocation; `TaskConfig.BuildTasks` turns the configured task definitions into
    `task.ITask` implementations.
-3. `TaskRun` creates the configured middleware consumer and a `task.Runner`,
-   then starts consuming until the process is canceled or the consumer exits.
+2. `TaskCommand` holds the consumer, tasks and its `[]*cli.Command`. The
+   `NewTaskCommand` constructor creates `run`, `run-by-pk`, `run-by-range` and
+   `run-all-by-range`.
+3. The `run` command creates a `task.Runner` and starts consuming until the
+   process is canceled or the consumer exits.
 4. The runner matches each event's database and table to the task declarations.
    It reads a main table's `primary_key` or a sub table's `ref_column`, then
    calls `RunByPrimaryKey` on the matching task or tasks, passing the event's
    row along with the value.
 5. The manual commands build a runner without a consumer and call
-   `RunByPrimaryKey`, `RunByTimeRange`, or `RunAllByTimeRange` directly. A row
-   named on the command line has no change behind it, so the task receives an
-   empty `types.EventRowData`. `RunAllByTimeRange` takes the main tables of the
+   `RunTaskByPrimaryKey` or `RunTaskByTimeRange` by task name, or
+   `RunAllByTimeRange` for all declared tasks. The first two operate on the
+   named task's main table; sub tables are processed by `RunAllByTimeRange`. A
+   row named on the command line has no change behind it, so the task receives
+   an empty `types.EventRowData`. `RunAllByTimeRange` takes the names of the
    tasks to leave out, so one backfill can skip a task it does not need.
 
 Tasks implement the [`task.ITask`](../../task/task.go) interface: they declare
-their main and sub tables and implement the primary-key and time-range runs.
+their name, their main and sub tables, and implement the primary-key and
+time-range runs.
 The primary-key run receives the change the run comes from as a
 `types.EventRowData`, so a task can read what happened (`Type`), the values the
 row has now (`Data`), and the ones an update moved away from (`Old`); it is
@@ -232,3 +244,26 @@ was routed to it, and the change the row came from when there was one. It does
 **not** query the source database or perform business work. Implement a task
 that satisfies `task.ITask` and configure it in the task configuration to add
 application-specific behavior.
+
+### Registering tasks from Go
+
+Applications that need custom task logic can build the same command set with a
+consumer and `task.ITask` implementations:
+
+```go
+taskCommand := cmd.NewTaskCommand()
+taskCommand.SetConsumer(eventConsumer)
+if err := taskCommand.AppendTasks(userSyncTask, userAuditTask); err != nil {
+	return err
+}
+
+if err := taskCommand.AppendCommands(customCommand); err != nil {
+	return err
+}
+app.Subcommands = taskCommand.Commands()
+```
+
+`TaskCommand` provides `run`, `run-by-pk`, `run-by-range` and
+`run-all-by-range`. The `cdc-go-task` executable loads its YAML configuration
+in `main.go` and supplies the resulting tasks and consumer to this same command
+set.

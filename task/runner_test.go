@@ -27,6 +27,23 @@ func TestNewRunner_ValidatesTheDeclarations(t *testing.T) {
 	assert.ErrorContains(t, err, "ref_column")
 }
 
+func TestNewRunner_RequiresATaskName(t *testing.T) {
+	// The name is what a caller runs a task by, so a task without one could not be
+	// asked for on its own.
+	_, err := NewRunner(nil, &unnamedTask{fakeTask{main: tableUser}})
+	assert.ErrorContains(t, err, "no name")
+}
+
+func TestNewRunner_RefusesATaskNameDeclaredTwice(t *testing.T) {
+	// Two tasks answering to one name cannot be told apart: a run that names it
+	// would silently run both.
+	_, err := NewRunner(nil,
+		&fakeTask{name: "user-sync", main: tableUser},
+		&fakeTask{name: "user-sync", main: tableUser},
+	)
+	assert.ErrorContains(t, err, `"user-sync" is declared twice`)
+}
+
 func TestNewRunner_IndexesTheTablesOfEveryTask(t *testing.T) {
 	r := newRunner(t, nil, &fakeTask{main: tableUser, subs: []Table{tableUserLog}})
 
@@ -283,6 +300,77 @@ func TestRunByPrimaryKey_ReportsWhichTaskFailed(t *testing.T) {
 	assert.ErrorContains(t, err, "1 of app.user")
 }
 
+// ---- RunTaskByPrimaryKey tests: one task by name ----
+
+func TestRunTaskByPrimaryKey_RunsOnlyTheNamedTask(t *testing.T) {
+	synced := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
+	audited := &fakeTask{name: "user-audit", main: tableUser}
+	r := newRunner(t, nil, synced, audited)
+
+	err := r.RunTaskByPrimaryKey(context.Background(), "user-audit",
+		types.EventRowData{}, types.NewPrimaryKey(int64(1)))
+
+	assert.NoError(t, err)
+	assert.Empty(t, synced.recorded())
+	assert.Equal(t, []call{{table: tableUser, mainPkVal: types.NewPrimaryKey(int64(1))}}, audited.recorded())
+}
+
+func TestRunTaskByPrimaryKey_UsesTheNamedTasksMainTable(t *testing.T) {
+	tk := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
+	r := newRunner(t, nil, tk)
+
+	err := r.RunTaskByPrimaryKey(context.Background(), "user-sync",
+		types.EventRowData{}, types.NewPrimaryKey(int64(2)))
+
+	assert.NoError(t, err)
+	assert.Equal(t, []call{{table: tableUser, mainPkVal: types.NewPrimaryKey(int64(2))}}, tk.recorded())
+}
+
+func TestRunTaskByPrimaryKey_HandsTheChangeToTheTask(t *testing.T) {
+	tk := &fakeTask{name: "user-sync", main: tableUser}
+	r := newRunner(t, nil, tk)
+	row := types.EventRowData{Type: types.UpdateEventRowType, Data: map[string]any{"id": int64(1)}}
+
+	err := r.RunTaskByPrimaryKey(context.Background(), "user-sync", row, types.NewPrimaryKey(int64(1)))
+
+	assert.NoError(t, err)
+	assert.Equal(t, []call{{table: tableUser, row: row, mainPkVal: types.NewPrimaryKey(int64(1))}}, tk.recorded())
+}
+
+func TestRunTaskByPrimaryKey_ReportsANameNoTaskAnswersTo(t *testing.T) {
+	tk := &fakeTask{name: "user-sync", main: tableUser}
+	r := newRunner(t, nil, tk)
+
+	err := r.RunTaskByPrimaryKey(context.Background(), "nobody",
+		types.EventRowData{}, types.NewPrimaryKey(int64(1)))
+
+	assert.ErrorContains(t, err, `no task is named "nobody"`)
+	assert.Empty(t, tk.recorded())
+}
+
+func TestRunTaskByPrimaryKey_ReportsAnEmptyValue(t *testing.T) {
+	tk := &fakeTask{name: "user-sync", main: tableUser}
+	r := newRunner(t, nil, tk)
+
+	err := r.RunTaskByPrimaryKey(context.Background(), "user-sync", types.EventRowData{}, types.NewPrimaryKey(""))
+
+	assert.ErrorContains(t, err, "primary key")
+	assert.Empty(t, tk.recorded())
+}
+
+func TestRunTaskByPrimaryKey_DoesNotStartWorkForACanceledContext(t *testing.T) {
+	tk := &fakeTask{name: "user-sync", main: tableUser}
+	r := newRunner(t, nil, tk)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := r.RunTaskByPrimaryKey(ctx, "user-sync", types.EventRowData{}, types.NewPrimaryKey(int64(1)))
+
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, tk.recorded())
+}
+
 // ---- RunByTimeRange tests ----
 
 func TestRunByTimeRange_RunsTheTasksOfTheTable(t *testing.T) {
@@ -364,6 +452,53 @@ func TestRunByTimeRange_ReportsWhichTaskFailed(t *testing.T) {
 	assert.ErrorContains(t, err, "of app.user")
 }
 
+// ---- RunTaskByTimeRange tests: one task by name ----
+
+func TestRunTaskByTimeRange_RunsOnlyTheNamedTask(t *testing.T) {
+	start, end := rangeOf()
+	synced := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
+	audited := &fakeTask{name: "user-audit", main: tableUser}
+	r := newRunner(t, nil, synced, audited)
+
+	err := r.RunTaskByTimeRange(context.Background(), "user-audit", start, end)
+
+	assert.NoError(t, err)
+	assert.Empty(t, synced.recordedRanges())
+	assert.Equal(t, []rangeCall{{table: tableUser, start: start, end: end}}, audited.recordedRanges())
+}
+
+func TestRunTaskByTimeRange_UsesTheNamedTasksMainTable(t *testing.T) {
+	start, end := rangeOf()
+	tk := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
+	r := newRunner(t, nil, tk)
+
+	err := r.RunTaskByTimeRange(context.Background(), "user-sync", start, end)
+
+	assert.NoError(t, err)
+	assert.Equal(t, []rangeCall{{table: tableUser, start: start, end: end}}, tk.recordedRanges())
+}
+
+func TestRunTaskByTimeRange_ReportsANameNoTaskAnswersTo(t *testing.T) {
+	start, end := rangeOf()
+	tk := &fakeTask{name: "user-sync", main: tableUser}
+	r := newRunner(t, nil, tk)
+
+	err := r.RunTaskByTimeRange(context.Background(), "nobody", start, end)
+
+	assert.ErrorContains(t, err, `no task is named "nobody"`)
+	assert.Empty(t, tk.recordedRanges())
+}
+
+func TestRunTaskByTimeRange_ReportsAnEmptyRange(t *testing.T) {
+	start, end := rangeOf()
+	tk := &fakeTask{name: "user-sync", main: tableUser}
+	r := newRunner(t, nil, tk)
+
+	assert.ErrorContains(t, r.RunTaskByTimeRange(context.Background(), "user-sync", start, start), "empty")
+	assert.ErrorContains(t, r.RunTaskByTimeRange(context.Background(), "user-sync", end, start), "empty")
+	assert.Empty(t, tk.recordedRanges())
+}
+
 // ---- RunAllByTimeRange tests ----
 
 func TestRunAllByTimeRange_RunsEveryTableOfEveryTask(t *testing.T) {
@@ -387,15 +522,15 @@ func TestRunAllByTimeRange_RunsEveryTableOfEveryTask(t *testing.T) {
 
 func TestRunAllByTimeRange_LeavesOutTheTaskItIsToldTo(t *testing.T) {
 	start, end := rangeOf()
-	user := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
-	order := &fakeTask{main: Table{Database: "app", Name: "order", PrimaryKey: "id"}}
+	user := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
+	order := &fakeTask{name: "order-sync", main: Table{Database: "app", Name: "order", PrimaryKey: "id"}}
 	r := newRunner(t, nil, user, order)
 
-	err := r.RunAllByTimeRange(context.Background(), start, end, "app.order")
+	err := r.RunAllByTimeRange(context.Background(), start, end, "order-sync")
 
 	assert.NoError(t, err)
-	// The task is named by its main table, and the one left out is left out whole:
-	// its main table and every sub table it watches.
+	// The task is named by its name, and the one left out is left out whole: its
+	// main table and every sub table it watches.
 	assert.ElementsMatch(t, []rangeCall{
 		{table: tableUser, start: start, end: end},
 		{table: tableUserLog, start: start, end: end},
@@ -405,12 +540,12 @@ func TestRunAllByTimeRange_LeavesOutTheTaskItIsToldTo(t *testing.T) {
 
 func TestRunAllByTimeRange_LeavesOutSeveralTasks(t *testing.T) {
 	start, end := rangeOf()
-	user := &fakeTask{main: tableUser}
-	order := &fakeTask{main: Table{Database: "app", Name: "order", PrimaryKey: "id"}}
-	kept := &fakeTask{main: Table{Database: "app", Name: "ticket", PrimaryKey: "id"}}
+	user := &fakeTask{name: "user-sync", main: tableUser}
+	order := &fakeTask{name: "order-sync", main: Table{Database: "app", Name: "order", PrimaryKey: "id"}}
+	kept := &fakeTask{name: "ticket-sync", main: Table{Database: "app", Name: "ticket", PrimaryKey: "id"}}
 	r := newRunner(t, nil, user, order, kept)
 
-	err := r.RunAllByTimeRange(context.Background(), start, end, "app.user", "app.order")
+	err := r.RunAllByTimeRange(context.Background(), start, end, "user-sync", "order-sync")
 
 	assert.NoError(t, err)
 	assert.Empty(t, user.recordedRanges())
@@ -418,22 +553,22 @@ func TestRunAllByTimeRange_LeavesOutSeveralTasks(t *testing.T) {
 	assert.Len(t, kept.recordedRanges(), 1)
 }
 
-func TestRunAllByTimeRange_LeavesOutEveryTaskDeclaringTheTable(t *testing.T) {
+func TestRunAllByTimeRange_LeavesOutOneOfTwoTasksOfTheSameTable(t *testing.T) {
 	start, end := rangeOf()
 	// Two tasks watch the same main table, which is what a fan-out is; the name
-	// leaves out both, since it names the table rather than one of them.
-	first := &fakeTask{main: tableUser}
-	second := &fakeTask{main: tableUser}
-	r := newRunner(t, nil, first, second)
+	// leaves out the one it names, and the other still runs.
+	synced := &fakeTask{name: "user-sync", main: tableUser}
+	audited := &fakeTask{name: "user-audit", main: tableUser}
+	r := newRunner(t, nil, synced, audited)
 
-	err := r.RunAllByTimeRange(context.Background(), start, end, "app.user")
+	err := r.RunAllByTimeRange(context.Background(), start, end, "user-sync")
 
 	assert.NoError(t, err)
-	assert.Empty(t, first.recordedRanges())
-	assert.Empty(t, second.recordedRanges())
+	assert.Empty(t, synced.recordedRanges())
+	assert.Len(t, audited.recordedRanges(), 1)
 }
 
-func TestRunAllByTimeRange_LeavesOutNothingForATableNoTaskAnswersTo(t *testing.T) {
+func TestRunAllByTimeRange_LeavesOutNothingForANameNoTaskAnswersTo(t *testing.T) {
 	start, end := rangeOf()
 	tk := &fakeTask{main: tableUser}
 	r := newRunner(t, nil, tk)
@@ -448,10 +583,10 @@ func TestRunAllByTimeRange_LeavesOutNothingForATableNoTaskAnswersTo(t *testing.T
 
 func TestRunAllByTimeRange_NothingIsRunWhenEverythingIsLeftOut(t *testing.T) {
 	start, end := rangeOf()
-	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
+	tk := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
 	r := newRunner(t, nil, tk)
 
-	err := r.RunAllByTimeRange(context.Background(), start, end, "app.user")
+	err := r.RunAllByTimeRange(context.Background(), start, end, "user-sync")
 
 	assert.NoError(t, err)
 	assert.Empty(t, tk.recordedRanges())
@@ -622,11 +757,13 @@ func TestRun_SubTableChangeNamesTheRowItMovedTo(t *testing.T) {
 // what tells a run that happens one task after the other from a run that happens
 // at the same time.
 type blockingTask struct {
+	name    string
 	main    Table
 	entered chan struct{}
 	release chan struct{}
 }
 
+func (t *blockingTask) Name() string       { return t.name }
 func (t *blockingTask) MainTable() Table   { return t.main }
 func (t *blockingTask) SubTables() []Table { return nil }
 
@@ -644,8 +781,8 @@ func (t *blockingTask) RunByTimeRange(context.Context, Table, time.Time, time.Ti
 
 func TestRunByPrimaryKey_RunsTheTasksOfOneChangeAtTheSameTime(t *testing.T) {
 	release := make(chan struct{})
-	first := &blockingTask{main: tableUser, entered: make(chan struct{}, 1), release: release}
-	second := &blockingTask{main: tableUser, entered: make(chan struct{}, 1), release: release}
+	first := &blockingTask{name: "first", main: tableUser, entered: make(chan struct{}, 1), release: release}
+	second := &blockingTask{name: "second", main: tableUser, entered: make(chan struct{}, 1), release: release}
 	r := newRunner(t, nil, first, second)
 
 	done := make(chan error, 1)
@@ -670,8 +807,8 @@ func TestRunByPrimaryKey_RunsTheTasksOfOneChangeAtTheSameTime(t *testing.T) {
 func TestRunByTimeRange_RunsTheTasksOfOneChangeAtTheSameTime(t *testing.T) {
 	start, end := rangeOf()
 	release := make(chan struct{})
-	first := &blockingTask{main: tableUser, entered: make(chan struct{}, 1), release: release}
-	second := &blockingTask{main: tableUser, entered: make(chan struct{}, 1), release: release}
+	first := &blockingTask{name: "first", main: tableUser, entered: make(chan struct{}, 1), release: release}
+	second := &blockingTask{name: "second", main: tableUser, entered: make(chan struct{}, 1), release: release}
 	r := newRunner(t, nil, first, second)
 
 	done := make(chan error, 1)
@@ -713,6 +850,7 @@ type waitingTask struct {
 	entered chan struct{}
 }
 
+func (t *waitingTask) Name() string       { return "waiting" }
 func (t *waitingTask) MainTable() Table   { return t.main }
 func (t *waitingTask) SubTables() []Table { return nil }
 

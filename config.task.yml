@@ -75,8 +75,14 @@ consumer:
 #
 # A change in the main table is routed by its primary key, and a change in a
 # sub table is routed by the ref_column that points at the main table's row.
+#
+# Every task needs a name, and no two tasks can share one: the name is the first
+# argument to `run-by-pk` and `run-by-range`, and what `run-all-by-range -x`
+# leaves a task out by. Two tasks watching the same table -- a fan-out -- are
+# therefore told apart by their names.
 tasks:
-  - main:
+  - name: user-sync
+    main:
       database: app
       name: user
       primary_key: id
@@ -90,7 +96,8 @@ tasks:
         primary_key: id
         ref_column: user_id
 
-  - main:
+  - name: order-sync
+    main:
       database: app
       name: order
       primary_key: id

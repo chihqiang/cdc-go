@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/signal"
 	"runtime"
-	"syscall"
 
 	"github.com/chihqiang/cdc-go/cmd"
+	"github.com/chihqiang/cdc-go/queue/consumer"
 	"github.com/chihqiang/cli"
 	"github.com/chihqiang/logx"
 )
@@ -27,29 +26,34 @@ func main() {
 			in.Command().Name, in.Command().Version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	}
 
-	runCmd := cmd.TaskRunCommand()
-	runByPkCmd := cmd.TaskRunByPrimaryKeyCommand()
-	runByRangeCmd := cmd.TaskRunByTimeRangeCommand()
-	runAllByRangeCmd := cmd.TaskRunAllByTimeRangeCommand()
+	taskCommand := cmd.NewTaskCommand()
 
 	app.Flags = cmd.TaskFlags()
-	app.Before = cmd.TaskBefore
-	app.Subcommands = []*cli.Command{
-		runCmd,
-		runByPkCmd,
-		runByRangeCmd,
-		runAllByRangeCmd,
+	app.Before = func(ctx context.Context, in *cli.Input, _ *cli.Output) (context.Context, error) {
+		if in.Args().First() == "help" || in.Args().First() == "version" {
+			return ctx, nil
+		}
+		cfg, err := cmd.LoadTaskConfig(in.String(cmd.TaskConfigFlag))
+		if err != nil {
+			return ctx, err
+		}
+		if err := taskCommand.AppendTasks(cfg.BuildTasks()...); err != nil {
+			return ctx, err
+		}
+		if in.Args().First() != "" && in.Args().First() != "run" {
+			return ctx, nil
+		}
+		eventConsumer, err := consumer.NewConsumer(cfg.Consumer)
+		if err != nil {
+			return ctx, err
+		}
+		taskCommand.SetConsumer(eventConsumer)
+		return ctx, nil
 	}
-	// Default action is "run" when no subcommand is given.
-	app.Action = runCmd.Action
+	app.Subcommands = taskCommand.Commands()
+	app.Action = app.Subcommands[0].Action
 
-	// Trap SIGTERM (Kubernetes pod shutdown) and SIGINT (Ctrl-C) so that
-	// the task runner receives a cancelled context instead of being killed
-	// mid-flight.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	if err := app.Run(ctx, os.Args); err != nil {
+	if err := app.Run(context.Background(), os.Args); err != nil {
 		logx.Error("%v", err)
 		var usageErr *cli.UsageError
 		if errors.As(err, &usageErr) {
