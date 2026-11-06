@@ -14,7 +14,6 @@ import (
 	"github.com/chihqiang/cdc-go/task"
 	"github.com/chihqiang/cdc-go/types"
 	"github.com/chihqiang/cli"
-	"github.com/chihqiang/logx"
 )
 
 const (
@@ -38,6 +37,7 @@ func NewTaskCommand() *TaskCommand {
 		c.runByPkCmd(),
 		c.runByRangeCmd(),
 		c.runAllByRangeCmd(),
+		c.listTasksCmd(),
 	}
 	return c
 }
@@ -98,12 +98,12 @@ func (c *TaskCommand) runCmd() *cli.Command {
 			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			logx.Info("starting task runner, consuming events")
+			out.Infof("starting task runner with consumer %T, consuming events", c.consumer)
 			err = runner.Run(ctx)
 			if err != nil && ctx.Err() == nil {
-				logx.Error("task runner stopped with error: %v", err)
+				out.Errorf("task runner stopped with error: %v", err)
 			} else {
-				logx.Info("task runner stopped")
+				out.Info("task runner stopped")
 			}
 			if cerr := runner.Close(); cerr != nil {
 				out.Errorf("failed to close runner: %v", cerr)
@@ -192,6 +192,36 @@ func (c *TaskCommand) runAllByRangeCmd() *cli.Command {
 				out.Infof("running all %d task(s) from %s to %s", len(c.tasks), start, end)
 			}
 			return runner.RunAllByTimeRange(ctx, start, end, exclude...)
+		}),
+	}
+}
+
+func (c *TaskCommand) listTasksCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "list-tasks",
+		Usage: "List all registered tasks and their watched tables",
+		Action: c.withExecutionStats("list-tasks", func(_ context.Context, _ *cli.Input, out *cli.Output) error {
+			if len(c.tasks) == 0 {
+				out.Info("No tasks registered.")
+				return nil
+			}
+
+			rows := make([][]string, 0, len(c.tasks))
+			for _, registeredTask := range c.tasks {
+				mainTable := registeredTask.MainTable()
+				subTables := registeredTask.SubTables()
+				subTableNames := make([]string, 0, len(subTables))
+				for _, table := range subTables {
+					subTableNames = append(subTableNames, table.Database+"."+table.Name)
+				}
+				rows = append(rows, []string{
+					registeredTask.Name(),
+					mainTable.Database + "." + mainTable.Name,
+					strings.Join(subTableNames, ", "),
+				})
+			}
+			out.Info(out.Table([]string{"Task", "Main table", "Sub tables"}, rows))
+			return nil
 		}),
 	}
 }

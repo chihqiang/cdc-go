@@ -37,8 +37,8 @@ func TestParseRange(t *testing.T) {
 	start, end, err := command.parseRange("2026-10-17 00:00:00", "2026-10-18 00:00:00")
 
 	assert.NoError(t, err)
-	assert.Equal(t, time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC), start)
-	assert.Equal(t, time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC), end)
+	assert.Equal(t, time.Date(2026, 10, 17, 0, 0, 0, 0, time.Local), start)
+	assert.Equal(t, time.Date(2026, 10, 18, 0, 0, 0, 0, time.Local), end)
 }
 
 func TestParseRange_ReportsInvalidAndEmptyRanges(t *testing.T) {
@@ -62,11 +62,12 @@ func TestTaskCommand_InitializesCommandValuesAndFlags(t *testing.T) {
 	command := NewTaskCommand()
 
 	commands := command.Commands()
-	assert.Equal(t, []string{"run", "run-by-pk", "run-by-range", "run-all-by-range"}, []string{
+	assert.Equal(t, []string{"run", "run-by-pk", "run-by-range", "run-all-by-range", "list-tasks"}, []string{
 		commands[0].Name,
 		commands[1].Name,
 		commands[2].Name,
 		commands[3].Name,
+		commands[4].Name,
 	})
 	assert.Equal(t, "<task-name> <primary-key-value>", commands[1].ArgsUsage)
 	assert.Equal(t, "<task-name> <start> <end>", commands[2].ArgsUsage)
@@ -74,6 +75,42 @@ func TestTaskCommand_InitializesCommandValuesAndFlags(t *testing.T) {
 	assert.Len(t, commands[3].Flags, 1)
 	assert.Equal(t, flagExclude, commands[3].Flags[0].Names()[0])
 	assert.Contains(t, commands[3].Flags[0].Names(), "x")
+}
+
+func TestTaskCommand_ListsRegisteredTasks(t *testing.T) {
+	command := NewTaskCommand()
+	assert.NoError(t, command.AppendTasks(
+		&task.LogTask{
+			TaskName: "user-sync",
+			Main:     task.Table{Database: "app", Name: "user", PrimaryKey: "id"},
+			Sub:      []task.Table{{Database: "app", Name: "user_log", PrimaryKey: "id", RefColumn: "user_id"}},
+		},
+		logTask("order-sync", "order"),
+	))
+
+	output := stdoutOf(t, func() {
+		assert.NoError(t, appForTaskCommand(command).Run(context.Background(), []string{
+			"external-app", "list-tasks",
+		}))
+	})
+
+	assert.Contains(t, output, "user-sync")
+	assert.Contains(t, output, "app.user")
+	assert.Contains(t, output, "app.user_log")
+	assert.Contains(t, output, "order-sync")
+	assert.Contains(t, output, "app.order")
+	assert.Contains(t, output, "command list-tasks finished:")
+}
+
+func TestTaskCommand_ListTasksWhenNoTasksRegistered(t *testing.T) {
+	output := stdoutOf(t, func() {
+		assert.NoError(t, appForTaskCommand(NewTaskCommand()).Run(context.Background(), []string{
+			"external-app", "list-tasks",
+		}))
+	})
+
+	assert.Contains(t, output, "No tasks registered.")
+	assert.Contains(t, output, "command list-tasks finished:")
 }
 
 func TestTaskCommand_RunsInjectedTasksAndConsumer(t *testing.T) {
@@ -89,7 +126,7 @@ func TestTaskCommand_RunsInjectedTasksAndConsumer(t *testing.T) {
 	assert.NoError(t, err)
 	app := appForTaskCommand(command)
 
-	stats := stdoutOf(t, func() {
+	output := stdoutOf(t, func() {
 		assert.NoError(t, app.Run(context.Background(), []string{
 			"external-app", "run-by-pk", "user-sync", "42",
 		}))
@@ -101,20 +138,22 @@ func TestTaskCommand_RunsInjectedTasksAndConsumer(t *testing.T) {
 			"external-app", "run-all-by-range",
 			"2026-10-17 00:00:00", "2026-10-18 00:00:00",
 		}))
+		assert.NoError(t, app.Run(context.Background(), []string{"external-app", "run"}))
 	})
-	assert.NoError(t, app.Run(context.Background(), []string{"external-app", "run"}))
 
 	assert.True(t, eventConsumer.consumed)
 	assert.True(t, eventConsumer.closed)
 	assert.Contains(t, logs(), "the row 42 of app.user")
 	assert.Contains(t, logs(), "app.user from")
 	assert.Contains(t, logs(), "app.user_log from")
-	assert.Contains(t, stats, "command run-by-pk finished: duration=")
-	assert.Contains(t, stats, "allocated=")
-	assert.Contains(t, stats, "heap-in-use=")
-	assert.Contains(t, stats, "command run-by-range finished: duration=")
-	assert.Contains(t, stats, "command run-all-by-range finished: duration=")
-	assert.NotContains(t, stats, "command run finished:")
+	assert.Contains(t, output, "command run-by-pk finished: duration=")
+	assert.Contains(t, output, "allocated=")
+	assert.Contains(t, output, "heap-in-use=")
+	assert.Contains(t, output, "command run-by-range finished: duration=")
+	assert.Contains(t, output, "command run-all-by-range finished: duration=")
+	assert.NotContains(t, output, "command run finished:")
+	assert.Contains(t, output, "starting task runner with consumer *cmd.taskCommandsTestConsumer, consuming events")
+	assert.Contains(t, output, "task runner stopped")
 }
 
 func TestTaskCommand_AppendTasksAppendsTasks(t *testing.T) {
@@ -157,11 +196,11 @@ func TestTaskCommand_AppendCommands(t *testing.T) {
 	assert.NoError(t, command.AppendCommands(customCommand))
 
 	commands := command.Commands()
-	assert.Len(t, commands, 5)
-	assert.Same(t, customCommand, commands[4])
+	assert.Len(t, commands, 6)
+	assert.Same(t, customCommand, commands[5])
 
 	assert.ErrorContains(t, command.AppendCommands(nil), "nil command")
-	assert.Len(t, command.Commands(), 5)
+	assert.Len(t, command.Commands(), 6)
 }
 
 func TestTaskCommand_ReportsInvalidTaskDeclaration(t *testing.T) {

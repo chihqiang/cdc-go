@@ -207,8 +207,8 @@ The command actions are in [`../taskcommand.go`](../taskcommand.go):
    invocation; `TaskConfig.BuildTasks` turns the configured task definitions into
    `task.ITask` implementations.
 2. `TaskCommand` holds the consumer, tasks and its `[]*cli.Command`. The
-   `NewTaskCommand` constructor creates `run`, `run-by-pk`, `run-by-range` and
-   `run-all-by-range`.
+   `NewTaskCommand` constructor creates `run`, `run-by-pk`, `run-by-range`,
+   `run-all-by-range` and `list-tasks`.
 3. The `run` command creates a `task.Runner` and starts consuming until the
    process is canceled or the consumer exits.
 4. The runner matches each event's database and table to the task declarations.
@@ -264,6 +264,6 @@ app.Subcommands = taskCommand.Commands()
 ```
 
 `TaskCommand` provides `run`, `run-by-pk`, `run-by-range` and
-`run-all-by-range`. The `cdc-go-task` executable loads its YAML configuration
-in `main.go` and supplies the resulting tasks and consumer to this same command
-set.
+`run-all-by-range`, and `list-tasks` to list registered tasks with their watched
+tables. The `cdc-go-task` executable loads its YAML configuration in `main.go`
+and supplies the resulting tasks and consumer to this same command set.
