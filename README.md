@@ -485,8 +485,8 @@ Available commands:
 | Command | Description |
 | --- | --- |
 | `run` | Continuously consume events and route them to the configured tasks, which log them. This is the default command. |
-| `run-by-pk <db.table> <pk>` | Route one main-table row to the tasks watching that table; `-t NAME` narrows it to one task. |
-| `run-by-range <db.table> <start> <end>` | Route rows in a half-open time range to the matching tasks; `-t NAME` narrows it to one task. |
+| `run-by-pk <task-name> <pk>` | Run one task for a row of its main table. |
+| `run-by-range <task-name> <start> <end>` | Run one task for rows of its main table in a half-open time range. |
 | `run-all-by-range <start> <end>` | Route every watched table to its task for a time range; `-x NAME` leaves a task out. |
 
 Every task in `config.task.yml` has a `name`, so two tasks watching the same
@@ -494,13 +494,10 @@ table can be told apart.
 
 ```bash
 # One row
-./cdc-go-task -c config.task.yml run-by-pk app.user 42
-
-# One row, through one of the tasks watching the table
-./cdc-go-task -c config.task.yml run-by-pk -t user-sync app.user 42
+./cdc-go-task -c config.task.yml run-by-pk user-sync 42
 
 # One day, half-open interval [start, end)
-./cdc-go-task -c config.task.yml run-by-range app.user \
+./cdc-go-task -c config.task.yml run-by-range user-sync \
   "2026-10-17 00:00:00" "2026-10-18 00:00:00"
 
 # Backfill everything the configuration watches

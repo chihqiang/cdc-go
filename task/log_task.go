@@ -31,7 +31,7 @@ import (
 //	        ref_column: user_id
 type LogTask struct {
 	// TaskName The name the task is known by, and what a caller passes to
-	// `run-by-pk -t` or `run-by-range -t` to run this task alone. Two tasks
+	// `run-by-pk` or `run-by-range` to run this task alone. Two tasks
 	// watching the same table need two names to be told apart.
 	TaskName string `json:"name"`
 	// Main The table the task works on

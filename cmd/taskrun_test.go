@@ -53,14 +53,11 @@ func TestTaskRunAllByTimeRangeCommand_DeclaresItsOwnArgumentOnly(t *testing.T) {
 	assert.Contains(t, c.Flags[0].Names(), "x")
 }
 
-func TestTaskManualCommands_DeclareTheTaskFlag(t *testing.T) {
-	// -t/--task selects one of the tasks watching the table, which is what tells
-	// two tasks of the same table apart.
-	for _, c := range []*cli.Command{TaskRunByPrimaryKeyCommand(), TaskRunByTimeRangeCommand()} {
-		assert.Len(t, c.Flags, 1, c.Name)
-		assert.Equal(t, flagTask, c.Flags[0].Names()[0], c.Name)
-		assert.Contains(t, c.Flags[0].Names(), "t", c.Name)
-	}
+func TestTaskManualCommands_TakeATaskNameInsteadOfATable(t *testing.T) {
+	assert.Equal(t, "<task-name> <primary-key-value>", TaskRunByPrimaryKeyCommand().ArgsUsage)
+	assert.Equal(t, "<task-name> <start> <end>", TaskRunByTimeRangeCommand().ArgsUsage)
+	assert.Empty(t, TaskRunByPrimaryKeyCommand().Flags)
+	assert.Empty(t, TaskRunByTimeRangeCommand().Flags)
 }
 
 func TestTaskSubcommands_DoNotDeclareTheConfigFlag(t *testing.T) {
@@ -152,7 +149,7 @@ func TestTaskCommand_LoadsTheFileNamedForATaskCommand(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	err := taskAppForTest().Run(context.Background(), []string{
-		"cdc-go-task", "-c", path, "run-by-pk", "app.ticket", "42",
+		"cdc-go-task", "-c", path, "run-by-pk", "ticket-sync", "42",
 	})
 
 	assert.NoError(t, err)
@@ -175,18 +172,19 @@ func TestTaskCommand_RunsTheTaskItIsNamedFor(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	err := taskAppForTest().Run(context.Background(), []string{
-		"cdc-go-task", "-c", path, "run-by-pk", "-t", "ticket-sync", "app.ticket", "42",
+		"cdc-go-task", "-c", path, "run-by-pk", "ticket-sync", "42",
 	})
 
 	assert.NoError(t, err)
-	assert.Contains(t, logs(), "running the task ticket-sync for the row 42 of app.ticket")
+	assert.Contains(t, logs(), "running the task ticket-sync for the row 42 of its main table")
+	assert.Contains(t, logs(), "the row 42 of app.ticket")
 }
 
 func TestTaskCommand_ReportsATaskNameItDoesNotKnow(t *testing.T) {
 	path := writeTaskConfig(t, "ticket")
 
 	err := taskAppForTest().Run(context.Background(), []string{
-		"cdc-go-task", "-c", path, "run-by-pk", "-t", "nobody", "app.ticket", "42",
+		"cdc-go-task", "-c", path, "run-by-pk", "nobody", "42",
 	})
 
 	assert.ErrorContains(t, err, `no task is named "nobody"`)
@@ -198,25 +196,23 @@ func TestTaskCommand_RunsTheTaskItIsNamedForOverARange(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	err := taskAppForTest().Run(context.Background(), []string{
-		"cdc-go-task", "-c", path, "run-by-range", "-t", "ticket-sync", "app.ticket",
+		"cdc-go-task", "-c", path, "run-by-range", "ticket-sync",
 		"2026-10-17 00:00:00", "2026-10-18 00:00:00",
 	})
 
 	assert.NoError(t, err)
-	assert.Contains(t, logs(), "running the task ticket-sync for app.ticket from")
+	assert.Contains(t, logs(), "running the task ticket-sync for its main table from")
+	assert.Contains(t, logs(), "app.ticket from")
 }
 
-func TestTaskCommand_RunsEveryTaskOfTheTableWithoutATaskName(t *testing.T) {
+func TestTaskCommand_ReportsMissingTaskName(t *testing.T) {
 	path := writeTaskConfig(t, "ticket")
-	logs := logsOf(t)
-	t.Chdir(t.TempDir())
 
 	err := taskAppForTest().Run(context.Background(), []string{
-		"cdc-go-task", "-c", path, "run-by-pk", "app.ticket", "42",
+		"cdc-go-task", "-c", path, "run-by-pk", "42",
 	})
 
-	assert.NoError(t, err)
-	assert.Contains(t, logs(), "running tasks for the row 42 of app.ticket")
+	assert.ErrorContains(t, err, "usage: run-by-pk <task-name> <primary-key-value>")
 }
 
 // syncBuffer collects what the logger writes from the tasks running at the same

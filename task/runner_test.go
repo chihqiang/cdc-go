@@ -300,14 +300,14 @@ func TestRunByPrimaryKey_ReportsWhichTaskFailed(t *testing.T) {
 	assert.ErrorContains(t, err, "1 of app.user")
 }
 
-// ---- RunTaskByPrimaryKey tests: one task of the table ----
+// ---- RunTaskByPrimaryKey tests: one task by name ----
 
 func TestRunTaskByPrimaryKey_RunsOnlyTheNamedTask(t *testing.T) {
 	synced := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
 	audited := &fakeTask{name: "user-audit", main: tableUser}
 	r := newRunner(t, nil, synced, audited)
 
-	err := r.RunTaskByPrimaryKey(context.Background(), "user-audit", "app.user",
+	err := r.RunTaskByPrimaryKey(context.Background(), "user-audit",
 		types.EventRowData{}, types.NewPrimaryKey(int64(1)))
 
 	assert.NoError(t, err)
@@ -315,17 +315,15 @@ func TestRunTaskByPrimaryKey_RunsOnlyTheNamedTask(t *testing.T) {
 	assert.Equal(t, []call{{table: tableUser, mainPkVal: types.NewPrimaryKey(int64(1))}}, audited.recorded())
 }
 
-func TestRunTaskByPrimaryKey_RunsASubTableOfTheNamedTask(t *testing.T) {
+func TestRunTaskByPrimaryKey_UsesTheNamedTasksMainTable(t *testing.T) {
 	tk := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
-	other := &fakeTask{name: "user-log-sync", main: tableUserLog}
-	r := newRunner(t, nil, tk, other)
+	r := newRunner(t, nil, tk)
 
-	err := r.RunTaskByPrimaryKey(context.Background(), "user-sync", "app.user_log",
+	err := r.RunTaskByPrimaryKey(context.Background(), "user-sync",
 		types.EventRowData{}, types.NewPrimaryKey(int64(2)))
 
 	assert.NoError(t, err)
-	assert.Equal(t, []call{{table: tableUserLog, mainPkVal: types.NewPrimaryKey(int64(2))}}, tk.recorded())
-	assert.Empty(t, other.recorded())
+	assert.Equal(t, []call{{table: tableUser, mainPkVal: types.NewPrimaryKey(int64(2))}}, tk.recorded())
 }
 
 func TestRunTaskByPrimaryKey_HandsTheChangeToTheTask(t *testing.T) {
@@ -333,7 +331,7 @@ func TestRunTaskByPrimaryKey_HandsTheChangeToTheTask(t *testing.T) {
 	r := newRunner(t, nil, tk)
 	row := types.EventRowData{Type: types.UpdateEventRowType, Data: map[string]any{"id": int64(1)}}
 
-	err := r.RunTaskByPrimaryKey(context.Background(), "user-sync", "app.user", row, types.NewPrimaryKey(int64(1)))
+	err := r.RunTaskByPrimaryKey(context.Background(), "user-sync", row, types.NewPrimaryKey(int64(1)))
 
 	assert.NoError(t, err)
 	assert.Equal(t, []call{{table: tableUser, row: row, mainPkVal: types.NewPrimaryKey(int64(1))}}, tk.recorded())
@@ -343,31 +341,18 @@ func TestRunTaskByPrimaryKey_ReportsANameNoTaskAnswersTo(t *testing.T) {
 	tk := &fakeTask{name: "user-sync", main: tableUser}
 	r := newRunner(t, nil, tk)
 
-	err := r.RunTaskByPrimaryKey(context.Background(), "nobody", "app.user",
+	err := r.RunTaskByPrimaryKey(context.Background(), "nobody",
 		types.EventRowData{}, types.NewPrimaryKey(int64(1)))
 
 	assert.ErrorContains(t, err, `no task is named "nobody"`)
 	assert.Empty(t, tk.recorded())
 }
 
-func TestRunTaskByPrimaryKey_ReportsATableTheTaskDoesNotWatch(t *testing.T) {
-	tk := &fakeTask{name: "user-sync", main: tableUser}
-	order := &fakeTask{name: "order-sync", main: Table{Database: "app", Name: "order", PrimaryKey: "id"}}
-	r := newRunner(t, nil, tk, order)
-
-	err := r.RunTaskByPrimaryKey(context.Background(), "user-sync", "app.order",
-		types.EventRowData{}, types.NewPrimaryKey(int64(1)))
-
-	assert.ErrorContains(t, err, `the task "user-sync" does not watch the table app.order`)
-	assert.Empty(t, tk.recorded())
-	assert.Empty(t, order.recorded())
-}
-
 func TestRunTaskByPrimaryKey_ReportsAnEmptyValue(t *testing.T) {
 	tk := &fakeTask{name: "user-sync", main: tableUser}
 	r := newRunner(t, nil, tk)
 
-	err := r.RunTaskByPrimaryKey(context.Background(), "user-sync", "app.user", types.EventRowData{}, types.NewPrimaryKey(""))
+	err := r.RunTaskByPrimaryKey(context.Background(), "user-sync", types.EventRowData{}, types.NewPrimaryKey(""))
 
 	assert.ErrorContains(t, err, "primary key")
 	assert.Empty(t, tk.recorded())
@@ -380,7 +365,7 @@ func TestRunTaskByPrimaryKey_DoesNotStartWorkForACanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := r.RunTaskByPrimaryKey(ctx, "user-sync", "app.user", types.EventRowData{}, types.NewPrimaryKey(int64(1)))
+	err := r.RunTaskByPrimaryKey(ctx, "user-sync", types.EventRowData{}, types.NewPrimaryKey(int64(1)))
 
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Empty(t, tk.recorded())
@@ -467,7 +452,7 @@ func TestRunByTimeRange_ReportsWhichTaskFailed(t *testing.T) {
 	assert.ErrorContains(t, err, "of app.user")
 }
 
-// ---- RunTaskByTimeRange tests: one task of the table ----
+// ---- RunTaskByTimeRange tests: one task by name ----
 
 func TestRunTaskByTimeRange_RunsOnlyTheNamedTask(t *testing.T) {
 	start, end := rangeOf()
@@ -475,11 +460,22 @@ func TestRunTaskByTimeRange_RunsOnlyTheNamedTask(t *testing.T) {
 	audited := &fakeTask{name: "user-audit", main: tableUser}
 	r := newRunner(t, nil, synced, audited)
 
-	err := r.RunTaskByTimeRange(context.Background(), "user-audit", "app.user", start, end)
+	err := r.RunTaskByTimeRange(context.Background(), "user-audit", start, end)
 
 	assert.NoError(t, err)
 	assert.Empty(t, synced.recordedRanges())
 	assert.Equal(t, []rangeCall{{table: tableUser, start: start, end: end}}, audited.recordedRanges())
+}
+
+func TestRunTaskByTimeRange_UsesTheNamedTasksMainTable(t *testing.T) {
+	start, end := rangeOf()
+	tk := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
+	r := newRunner(t, nil, tk)
+
+	err := r.RunTaskByTimeRange(context.Background(), "user-sync", start, end)
+
+	assert.NoError(t, err)
+	assert.Equal(t, []rangeCall{{table: tableUser, start: start, end: end}}, tk.recordedRanges())
 }
 
 func TestRunTaskByTimeRange_ReportsANameNoTaskAnswersTo(t *testing.T) {
@@ -487,7 +483,7 @@ func TestRunTaskByTimeRange_ReportsANameNoTaskAnswersTo(t *testing.T) {
 	tk := &fakeTask{name: "user-sync", main: tableUser}
 	r := newRunner(t, nil, tk)
 
-	err := r.RunTaskByTimeRange(context.Background(), "nobody", "app.user", start, end)
+	err := r.RunTaskByTimeRange(context.Background(), "nobody", start, end)
 
 	assert.ErrorContains(t, err, `no task is named "nobody"`)
 	assert.Empty(t, tk.recordedRanges())
@@ -498,8 +494,8 @@ func TestRunTaskByTimeRange_ReportsAnEmptyRange(t *testing.T) {
 	tk := &fakeTask{name: "user-sync", main: tableUser}
 	r := newRunner(t, nil, tk)
 
-	assert.ErrorContains(t, r.RunTaskByTimeRange(context.Background(), "user-sync", "app.user", start, start), "empty")
-	assert.ErrorContains(t, r.RunTaskByTimeRange(context.Background(), "user-sync", "app.user", end, start), "empty")
+	assert.ErrorContains(t, r.RunTaskByTimeRange(context.Background(), "user-sync", start, start), "empty")
+	assert.ErrorContains(t, r.RunTaskByTimeRange(context.Background(), "user-sync", end, start), "empty")
 	assert.Empty(t, tk.recordedRanges())
 }
 

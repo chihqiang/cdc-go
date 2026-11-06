@@ -108,46 +108,31 @@ Environment references in either configuration use `${VAR}` or
 
 ### `run-by-pk`
 
-Runs watching tasks for one main-table row:
+Runs the named task for one row of its main table. The first argument is the
+task name from the configuration, not a table name:
 
 ```bash
-./cdc-go-task -c config.task.yml run-by-pk app.user 42
+./cdc-go-task -c config.task.yml run-by-pk user-sync 42
 ```
 
-The table must be written as `database.table`. For a main table, the value is
-its `primary_key`. For a sub table, the value is the owning main row's
-`ref_column` value. For example, `app.user_log 42` runs the task for user 42.
-
-More than one task can watch the same table, which is what a fan-out is. By
-default every one of them runs; `-t` / `--task` runs the one it names, and only
-that one:
-
-```bash
-./cdc-go-task -c config.task.yml run-by-pk -t user-sync app.user 42
-```
-
-The name is the `name` of the task in `config.task.yml`. A name no task
-declares, and a task that does not watch the named table, are reported as the
-two different mistakes they are. The flag goes before the arguments, since the
-positional ones end the flag list.
+The primary-key value is for the task's main table. For a task whose main table
+is `app.user`, `user-sync 42` runs that task for user 42, whether or not it also
+watches sub tables. To run every task watching the same table, name each task
+separately.
 
 ### `run-by-range`
 
-Runs watching tasks for rows in the half-open interval `[start, end)`:
+Runs the named task for rows of its main table in the half-open interval
+`[start, end)`:
 
 ```bash
-./cdc-go-task -c config.task.yml run-by-range app.user \
+./cdc-go-task -c config.task.yml run-by-range user-sync \
   "2026-10-17 00:00:00" "2026-10-18 00:00:00"
 ```
 
 Times must use `2006-01-02 15:04:05`. The task decides which timestamp column
-to use and performs any database work; the runner passes it the table and
-range. As with `run-by-pk`, `-t` / `--task` runs only the named task:
-
-```bash
-./cdc-go-task -c config.task.yml run-by-range -t user-sync app.user \
-  "2026-10-17 00:00:00" "2026-10-18 00:00:00"
-```
+to use and performs any database work; the runner passes it its main table and
+the range. Sub tables are processed by `run-all-by-range`.
 
 ### `run-all-by-range`
 
@@ -198,9 +183,9 @@ tasks:
         ref_column: user_id
 ```
 
-The name is required and cannot be shared: it is what `run-by-pk -t` and
-`run-by-range -t` select a task with, and what `run-all-by-range -x` leaves one
-out by. A configuration that names a task with nothing, or gives two tasks the
+The name is required and cannot be shared: it is what `run-by-pk` and
+`run-by-range` select a task with, and what `run-all-by-range -x` leaves one out
+by. A configuration that names a task with nothing, or gives two tasks the
 same name, is refused when the runner is built.
 
 The runner indexes these declarations when it starts. A change to `app.user`
@@ -231,11 +216,12 @@ The command actions and task configuration type are in
    calls `RunByPrimaryKey` on the matching task or tasks, passing the event's
    row along with the value.
 5. The manual commands build a runner without a consumer and call
-   `RunByPrimaryKey`, `RunByTimeRange`, or `RunAllByTimeRange` directly, or
-   `RunTaskByPrimaryKey` / `RunTaskByTimeRange` when `-t` names one task. A row
-   named on the command line has no change behind it, so the task receives an
-   empty `types.EventRowData`. `RunAllByTimeRange` takes the names of the tasks
-   to leave out, so one backfill can skip a task it does not need.
+   `RunTaskByPrimaryKey` or `RunTaskByTimeRange` by task name, or
+   `RunAllByTimeRange` for all declared tasks. The first two operate on the
+   named task's main table; sub tables are processed by `RunAllByTimeRange`. A
+   row named on the command line has no change behind it, so the task receives
+   an empty `types.EventRowData`. `RunAllByTimeRange` takes the names of the
+   tasks to leave out, so one backfill can skip a task it does not need.
 
 Tasks implement the [`task.ITask`](../../task/task.go) interface: they declare
 their name, their main and sub tables, and implement the primary-key and

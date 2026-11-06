@@ -122,27 +122,24 @@ func (r *Runner) RunByPrimaryKey(ctx context.Context, table string, row types.Ev
 // RunTaskByPrimaryKey Executes the task named taskName for one row of its main
 // table, named by mainPkVal.
 //
-// It is RunByPrimaryKey narrowed to one task, for the tables several tasks
-// watch: `cdc-go-task run-by-pk -t user-sync app.user 42`. taskName is the name
-// the configuration gives the task, and table is one of the tables that task
-// declares, written as db.table -- a task runs on one table at a time even when
-// only it is asked for.
-//
-// mainPkVal names the row as that table declares it: the value of Table.PrimaryKey
-// when table is the main table of the task, and of Table.RefColumn when it is one
-// of its sub tables.
-func (r *Runner) RunTaskByPrimaryKey(ctx context.Context, taskName, table string, row types.EventRowData, mainPkVal types.PrimaryKey) error {
+// It is RunByPrimaryKey narrowed to one task, for when several tasks watch the
+// same main table. The task is named by its name in the configuration, and the
+// table is its main table: `cdc-go-task run-by-pk user-sync 42`. Sub tables are
+// only selected by events or by RunAllByTimeRange.
+func (r *Runner) RunTaskByPrimaryKey(ctx context.Context, taskName string, row types.EventRowData, mainPkVal types.PrimaryKey) error {
 	if mainPkVal.IsEmpty() {
-		return fmt.Errorf("the run of %s needs the value of the main table's primary key", table)
+		return fmt.Errorf("the run of task %q needs the value of the main table's primary key", taskName)
 	}
-	watchers, err := r.watched.ofTask(taskName, table)
+	w, err := r.watched.taskNamed(taskName)
 	if err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
-	return runEach(ctx, watchers, func(w watcher) error {
-		return runTask(ctx, w, table, row, mainPkVal)
-	})
+	table := tableKeyOf(w.table.Database, w.table.Name)
+	return runTask(ctx, w, table, row, mainPkVal)
 }
 
 // RunByTimeRange Executes every task watching table for the rows of that table
@@ -173,25 +170,26 @@ func (r *Runner) RunByTimeRange(ctx context.Context, table string, start, end ti
 	})
 }
 
-// RunTaskByTimeRange Executes the task named taskName for the rows of table
-// whose time falls in [start, end).
+// RunTaskByTimeRange Executes the task named taskName for the rows of its main
+// table whose time falls in [start, end).
 //
 // It is RunByTimeRange narrowed to one task, for the tables several tasks
-// watch: `cdc-go-task run-by-range -t user-sync app.user ...`. taskName is the
-// name the configuration gives the task, and table is one of the tables that task
-// declares, written as db.table.
-func (r *Runner) RunTaskByTimeRange(ctx context.Context, taskName, table string, start, end time.Time) error {
+// watch: `cdc-go-task run-by-range user-sync ...`. Sub tables are only selected
+// by RunAllByTimeRange.
+func (r *Runner) RunTaskByTimeRange(ctx context.Context, taskName string, start, end time.Time) error {
 	if !start.Before(end) {
-		return fmt.Errorf("the range %s to %s of %s is empty: it ends before it starts", start, end, table)
+		return fmt.Errorf("the range %s to %s of task %q is empty: it ends before it starts", start, end, taskName)
 	}
-	watchers, err := r.watched.ofTask(taskName, table)
+	w, err := r.watched.taskNamed(taskName)
 	if err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
-	return runEach(ctx, watchers, func(w watcher) error {
-		return runTaskRange(ctx, w, table, start, end)
-	})
+	table := tableKeyOf(w.table.Database, w.table.Name)
+	return runTaskRange(ctx, w, table, start, end)
 }
 
 // RunAllByTimeRange Executes every task for the rows of every table it watches

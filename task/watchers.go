@@ -145,43 +145,20 @@ func (ws watchers) named(table string) ([]watcher, error) {
 	return watchers, nil
 }
 
-// ofTask Returns the watchers of the one task a caller named, among those of
-// table, or the reason there are none.
+// taskNamed Returns the main-table watcher of the task a caller named.
 //
-// The task is named the way a configuration names it, and table as db.table: a
-// task running alone still needs to be told which of its tables to work on. The
-// two are reported apart, because a name nobody declares and a task that does not
-// watch the table are different mistakes.
-func (ws watchers) ofTask(taskName, table string) ([]watcher, error) {
-	watchers, err := ws.named(table)
-	if err != nil {
-		return nil, err
-	}
-	matched := make([]watcher, 0, len(watchers))
-	for _, w := range watchers {
-		if w.taskName == taskName {
-			matched = append(matched, w)
-		}
-	}
-	if len(matched) > 0 {
-		return matched, nil
-	}
-	if !ws.hasTask(taskName) {
-		return nil, fmt.Errorf("no task is named %q", taskName)
-	}
-	return nil, fmt.Errorf("the task %q does not watch the table %s", taskName, table)
-}
-
-// hasTask Reports whether any task is named name.
-func (ws watchers) hasTask(name string) bool {
+// Manual runs that select one task operate on its main table. Sub tables remain
+// available to event routing and run-all-by-range, where the table is known from
+// the event or the full set of declarations.
+func (ws watchers) taskNamed(name string) (watcher, error) {
 	for _, watchers := range ws {
 		for _, w := range watchers {
-			if w.taskName == name {
-				return true
+			if w.main && w.taskName == name {
+				return w, nil
 			}
 		}
 	}
-	return false
+	return watcher{}, fmt.Errorf("no task is named %q", name)
 }
 
 // tableKeyOf Names a table the way it is written in a configuration: db.table

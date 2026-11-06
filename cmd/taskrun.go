@@ -89,20 +89,6 @@ const flagTaskConfig = "task-config"
 // each named by its task name.
 const flagExcludeTask = "exclude"
 
-// flagTask is the flag name for the one task a manual run works on, for the
-// tables several tasks watch. Its absence means every task watching the table.
-const flagTask = "task"
-
-// taskFlag returns the flag a manual run selects one task with.
-func taskFlag() cli.Flag {
-	return &cli.StringFlag{
-		Name:        flagTask,
-		Aliases:     []string{"t"},
-		Usage:       "Run only the task named `NAME`; omit it to run every task watching the table",
-		DefaultText: "every task watching the table",
-	}
-}
-
 // TaskFlags returns the task configuration flag. It is declared on the root
 // command only: it selects the configuration of the whole program, so a
 // subcommand does not declare it again and does not parse it on its own command
@@ -170,17 +156,12 @@ func TaskRun(ctx context.Context, cfg *TaskConfig) error {
 }
 
 // TaskRunByPrimaryKeyCommand creates the "run-by-pk" subcommand: it executes
-// the tasks watching a table for one row of their main table, named by the
-// primary key value given on the command line.
-//
-// With -t/--task only the named task is run, which is what tells two tasks of
-// the same table apart.
+// the named task for one row of its main table, identified by primary key.
 func TaskRunByPrimaryKeyCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "run-by-pk",
-		Usage:     "Execute the tasks watching a table for one row of their main table",
-		ArgsUsage: "<db.table> <primary-key-value>",
-		Flags:     []cli.Flag{taskFlag()},
+		Usage:     "Execute one task for a row of its main table",
+		ArgsUsage: "<task-name> <primary-key-value>",
 		Action: func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			cfg, err := TaskConfigFromContext(ctx)
 			if err != nil {
@@ -188,43 +169,33 @@ func TaskRunByPrimaryKeyCommand() *cli.Command {
 			}
 			args := in.Args()
 			if args.Len() < 2 {
-				return fmt.Errorf("usage: run-by-pk <db.table> <primary-key-value>")
+				return fmt.Errorf("usage: run-by-pk <task-name> <primary-key-value>")
 			}
-			return TaskRunByPrimaryKey(ctx, cfg, args.First(), args.Get(1), in.String(flagTask))
+			return TaskRunByPrimaryKey(ctx, cfg, args.First(), args.Get(1))
 		},
 	}
 }
 
-// TaskRunByPrimaryKey builds a runner without a consumer and executes the tasks
-// watching the given table for the row named by mainPkVal. taskName narrows the
-// run to that one task; an empty one runs every task watching the table.
-func TaskRunByPrimaryKey(ctx context.Context, cfg *TaskConfig, table, mainPkVal, taskName string) error {
+// TaskRunByPrimaryKey builds a runner without a consumer and executes the named
+// task for the row of its main table named by mainPkVal.
+func TaskRunByPrimaryKey(ctx context.Context, cfg *TaskConfig, taskName, mainPkVal string) error {
 	runner, err := task.NewRunner(nil, cfg.BuildTasks()...)
 	if err != nil {
 		return fmt.Errorf("failed to create runner: %w", err)
 	}
 
 	// The row was named on the command line, so there is no change to pass on.
-	row := types.EventRowData{}
-	if taskName != "" {
-		logx.Info("running the task %s for the row %s of %s", taskName, mainPkVal, table)
-		return runner.RunTaskByPrimaryKey(ctx, taskName, table, row, types.NewPrimaryKey(mainPkVal))
-	}
-	logx.Info("running tasks for the row %s of %s", mainPkVal, table)
-	return runner.RunByPrimaryKey(ctx, table, row, types.NewPrimaryKey(mainPkVal))
+	logx.Info("running the task %s for the row %s of its main table", taskName, mainPkVal)
+	return runner.RunTaskByPrimaryKey(ctx, taskName, types.EventRowData{}, types.NewPrimaryKey(mainPkVal))
 }
 
 // TaskRunByTimeRangeCommand creates the "run-by-range" subcommand: it executes
-// the tasks watching a table for the rows whose time falls in [start, end).
-//
-// With -t/--task only the named task is run, which is what tells two tasks of
-// the same table apart.
+// the named task for rows of its main table in [start, end).
 func TaskRunByTimeRangeCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "run-by-range",
-		Usage:     "Execute the tasks watching a table for the rows whose time falls in a range",
-		ArgsUsage: "<db.table> <start> <end>",
-		Flags:     []cli.Flag{taskFlag()},
+		Usage:     "Execute one task for rows of its main table in a time range",
+		ArgsUsage: "<task-name> <start> <end>",
 		Action: func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			cfg, err := TaskConfigFromContext(ctx)
 			if err != nil {
@@ -232,18 +203,16 @@ func TaskRunByTimeRangeCommand() *cli.Command {
 			}
 			args := in.Args()
 			if args.Len() < 3 {
-				return fmt.Errorf("usage: run-by-range <db.table> <start> <end>  (time format: 2006-01-02 15:04:05)")
+				return fmt.Errorf("usage: run-by-range <task-name> <start> <end>  (time format: 2006-01-02 15:04:05)")
 			}
-			return TaskRunByTimeRange(ctx, cfg, args.First(), args.Get(1), args.Get(2), in.String(flagTask))
+			return TaskRunByTimeRange(ctx, cfg, args.First(), args.Get(1), args.Get(2))
 		},
 	}
 }
 
-// TaskRunByTimeRange builds a runner without a consumer and executes the tasks
-// watching the given table for the rows whose time falls in [start, end).
-// taskName narrows the run to that one task; an empty one runs every task
-// watching the table.
-func TaskRunByTimeRange(ctx context.Context, cfg *TaskConfig, table, startStr, endStr, taskName string) error {
+// TaskRunByTimeRange builds a runner without a consumer and executes the named
+// task for rows of its main table in [start, end).
+func TaskRunByTimeRange(ctx context.Context, cfg *TaskConfig, taskName, startStr, endStr string) error {
 	start, end, err := parseRange(startStr, endStr)
 	if err != nil {
 		return err
@@ -254,12 +223,8 @@ func TaskRunByTimeRange(ctx context.Context, cfg *TaskConfig, table, startStr, e
 		return fmt.Errorf("failed to create runner: %w", err)
 	}
 
-	if taskName != "" {
-		logx.Info("running the task %s for %s from %s to %s", taskName, table, start, end)
-		return runner.RunTaskByTimeRange(ctx, taskName, table, start, end)
-	}
-	logx.Info("running tasks for %s from %s to %s", table, start, end)
-	return runner.RunByTimeRange(ctx, table, start, end)
+	logx.Info("running the task %s for its main table from %s to %s", taskName, start, end)
+	return runner.RunTaskByTimeRange(ctx, taskName, start, end)
 }
 
 // TaskRunAllByTimeRangeCommand creates the "run-all-by-range" subcommand: it

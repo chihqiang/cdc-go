@@ -43,7 +43,7 @@ type ITask interface {
 	// Name Returns the name the task is known by.
 	//
 	// It is what a caller names to run this task alone -- `cdc-go-task run-by-pk
-	// -t user-sync app.user 42` -- and what leaves it out of a run over the whole
+	// user-sync 42` -- and what leaves it out of a run over the whole
 	// configuration. A name therefore has to name one task: two tasks sharing one
 	// cannot be told apart, so the runner refuses a configuration that declares
 	// the same name twice, and one that names a task with nothing at all.
