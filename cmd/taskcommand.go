@@ -230,11 +230,11 @@ func (c *TaskCommand) newRunner(eventConsumer consumer.IConsumer, out *cli.Outpu
 }
 
 func (c *TaskCommand) parseRange(startStr, endStr string) (time.Time, time.Time, error) {
-	start, err := time.Parse(rangeLayout, startStr)
+	start, err := time.ParseInLocation(rangeLayout, startStr, time.Local)
 	if err != nil {
 		return time.Time{}, time.Time{}, fmt.Errorf("invalid start time %q: %w (expected format: %s)", startStr, err, rangeLayout)
 	}
-	end, err := time.Parse(rangeLayout, endStr)
+	end, err := time.ParseInLocation(rangeLayout, endStr, time.Local)
 	if err != nil {
 		return time.Time{}, time.Time{}, fmt.Errorf("invalid end time %q: %w (expected format: %s)", endStr, err, rangeLayout)
 	}
