@@ -196,21 +196,21 @@ are ignored.
 ## Implementation
 
 The executable entry point is [`main.go`](./main.go). It creates the CLI
-commands, attaches the task configuration flag and the `Before` hook, and
-installs SIGINT/SIGTERM cancellation.
+commands and attaches the task configuration flag. Its `Before` hook loads the
+YAML file and supplies the tasks to `TaskCommand`; it creates the consumer only
+for the continuous `run` command.
 
-The command actions and task configuration type are in
-[`../taskrun.go`](../taskrun.go):
+The YAML configuration type and loader are in [`../taskrun.go`](../taskrun.go).
+The command actions are in [`../taskcommand.go`](../taskcommand.go):
 
-1. `TaskBefore` is the root `Before` hook: `loadTaskConfig` reads the YAML file
-   with environment expansion once per invocation, and the configuration is put
-   in the context. Every command takes it from there with
-   `TaskConfigFromContext`, so the file is read once and the flag is declared
-   only on the root command.
-2. `TaskConfig.BuildTasks` turns the configured task definitions into
+1. `LoadTaskConfig` reads the YAML file with environment expansion once per
+   invocation; `TaskConfig.BuildTasks` turns the configured task definitions into
    `task.ITask` implementations.
-3. `TaskRun` creates the configured middleware consumer and a `task.Runner`,
-   then starts consuming until the process is canceled or the consumer exits.
+2. `TaskCommand` holds the consumer, tasks and its `[]*cli.Command`. The
+   `NewTaskCommand` constructor creates `run`, `run-by-pk`, `run-by-range` and
+   `run-all-by-range`.
+3. The `run` command creates a `task.Runner` and starts consuming until the
+   process is canceled or the consumer exits.
 4. The runner matches each event's database and table to the task declarations.
    It reads a main table's `primary_key` or a sub table's `ref_column`, then
    calls `RunByPrimaryKey` on the matching task or tasks, passing the event's
@@ -244,3 +244,23 @@ was routed to it, and the change the row came from when there was one. It does
 **not** query the source database or perform business work. Implement a task
 that satisfies `task.ITask` and configure it in the task configuration to add
 application-specific behavior.
+
+### Registering tasks from Go
+
+Applications that need custom task logic can build the same command set with a
+consumer and `task.ITask` implementations:
+
+```go
+taskCommand := cmd.NewTaskCommand()
+taskCommand.SetConsumer(eventConsumer)
+if err := taskCommand.SetTasks(userSyncTask, userAuditTask); err != nil {
+	return err
+}
+
+app.Subcommands = append(app.Subcommands, taskCommand.Commands()...)
+```
+
+`TaskCommand` provides `run`, `run-by-pk`, `run-by-range` and
+`run-all-by-range`. The `cdc-go-task` executable loads its YAML configuration
+in `main.go` and supplies the resulting tasks and consumer to this same command
+set.
