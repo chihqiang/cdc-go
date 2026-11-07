@@ -161,3 +161,55 @@ func change(database, table string, values map[string]any) types.EventData {
 		},
 	}
 }
+
+// blockingTask signals when it was entered and waits to be released, which is
+// what tells a run that happens one task after the other from a run that happens
+// at the same time.
+type blockingTask struct {
+	name    string
+	main    Table
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (t *blockingTask) Name() string { return t.name }
+
+func (t *blockingTask) MainTable() Table { return t.main }
+
+func (t *blockingTask) SubTables() []Table { return nil }
+
+func (t *blockingTask) RunByPrimaryKey(context.Context, Table, types.EventRowData, types.PrimaryKey) error {
+	t.entered <- struct{}{}
+	<-t.release
+	return nil
+}
+
+func (t *blockingTask) RunByTimeRange(context.Context, Table, time.Time, time.Time) error {
+	t.entered <- struct{}{}
+	<-t.release
+	return nil
+}
+
+// waitingTask stands in for a task doing work that the cancellation has to reach.
+type waitingTask struct {
+	main    Table
+	entered chan struct{}
+}
+
+func (t *waitingTask) Name() string { return "waiting" }
+
+func (t *waitingTask) MainTable() Table { return t.main }
+
+func (t *waitingTask) SubTables() []Table { return nil }
+
+func (t *waitingTask) RunByPrimaryKey(ctx context.Context, _ Table, _ types.EventRowData, _ types.PrimaryKey) error {
+	t.entered <- struct{}{}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (t *waitingTask) RunByTimeRange(ctx context.Context, _ Table, _, _ time.Time) error {
+	t.entered <- struct{}{}
+	<-ctx.Done()
+	return ctx.Err()
+}
