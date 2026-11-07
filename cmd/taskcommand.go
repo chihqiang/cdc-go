@@ -19,6 +19,13 @@ import (
 const (
 	flagExclude = "exclude"
 	rangeLayout = "2006-01-02 15:04:05"
+
+	// The names of the subcommands, as they are written on the command line.
+	CmdTaskRun           = "run"
+	CmdTaskRunByPk       = "run-by-pk"
+	CmdTaskRunByRange    = "run-by-range"
+	CmdTaskRunAllByRange = "run-all-by-range"
+	CmdTaskListTasks     = "list-tasks"
 )
 
 // TaskCommand builds commands for injected tasks and a consumer.
@@ -33,11 +40,11 @@ type TaskCommand struct {
 func NewTaskCommand() *TaskCommand {
 	c := &TaskCommand{}
 	c.commands = []*cli.Command{
-		c.runCmd(),
-		c.runByPkCmd(),
-		c.runByRangeCmd(),
-		c.runAllByRangeCmd(),
-		c.listTasksCmd(),
+		c.RunCmd(),
+		c.RunByPkCmd(),
+		c.RunByRangeCmd(),
+		c.RunAllByRangeCmd(),
+		c.ListTasksCmd(),
 	}
 	return c
 }
@@ -78,13 +85,19 @@ func (c *TaskCommand) SetDependencies(eventConsumer consumer.IConsumer, tasks ..
 }
 
 // Commands returns the commands provided by this task command set.
+//
+// It is every command the set builds. One of them alone is available from the
+// method that builds it -- RunCmd, RunByPkCmd, RunByRangeCmd, RunAllByRangeCmd
+// and ListTasksCmd -- for a caller that only wants some of them.
 func (c *TaskCommand) Commands() []*cli.Command {
 	return append([]*cli.Command(nil), c.commands...)
 }
 
-func (c *TaskCommand) runCmd() *cli.Command {
+// RunCmd Builds the "run" subcommand: it consumes the events and executes the
+// injected tasks.
+func (c *TaskCommand) RunCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "run",
+		Name:  CmdTaskRun,
 		Usage: "Consume CDC events from the middleware and execute the injected tasks",
 		Action: func(ctx context.Context, _ *cli.Input, out *cli.Output) error {
 			if c.consumer == nil {
@@ -118,12 +131,14 @@ func (c *TaskCommand) runCmd() *cli.Command {
 	}
 }
 
-func (c *TaskCommand) runByPkCmd() *cli.Command {
+// RunByPkCmd Builds the "run-by-pk" subcommand: it executes one task for a row
+// of its main table.
+func (c *TaskCommand) RunByPkCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "run-by-pk",
+		Name:      CmdTaskRunByPk,
 		Usage:     "Execute one task for a row of its main table",
 		ArgsUsage: "<task-name> <primary-key-value>",
-		Action: WithExecutionStats("run-by-pk", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
+		Action: WithExecutionStats(CmdTaskRunByPk, func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			args := in.Args()
 			if args.Len() < 2 {
 				return fmt.Errorf("usage: run-by-pk <task-name> <primary-key-value>")
@@ -139,12 +154,14 @@ func (c *TaskCommand) runByPkCmd() *cli.Command {
 	}
 }
 
-func (c *TaskCommand) runByRangeCmd() *cli.Command {
+// RunByRangeCmd Builds the "run-by-range" subcommand: it executes one task for
+// the rows of its main table whose time falls in a range.
+func (c *TaskCommand) RunByRangeCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "run-by-range",
+		Name:      CmdTaskRunByRange,
 		Usage:     "Execute one task for rows of its main table in a time range",
 		ArgsUsage: "<task-name> <start> <end>",
-		Action: WithExecutionStats("run-by-range", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
+		Action: WithExecutionStats(CmdTaskRunByRange, func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			args := in.Args()
 			if args.Len() < 3 {
 				return fmt.Errorf("usage: run-by-range <task-name> <start> <end>  (time format: %s)", rangeLayout)
@@ -164,9 +181,11 @@ func (c *TaskCommand) runByRangeCmd() *cli.Command {
 	}
 }
 
-func (c *TaskCommand) runAllByRangeCmd() *cli.Command {
+// RunAllByRangeCmd Builds the "run-all-by-range" subcommand: it works through
+// every table of every task for a range, leaving out the tasks it is told to.
+func (c *TaskCommand) RunAllByRangeCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "run-all-by-range",
+		Name:      CmdTaskRunAllByRange,
 		Usage:     "Execute every task for the rows of every table it watches whose time falls in a range",
 		ArgsUsage: "<start> <end>",
 		Flags: []cli.Flag{&cli.StringSliceFlag{
@@ -176,7 +195,7 @@ func (c *TaskCommand) runAllByRangeCmd() *cli.Command {
 				"a comma-separated list to leave out several",
 			DefaultText: "none",
 		}},
-		Action: WithExecutionStats("run-all-by-range", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
+		Action: WithExecutionStats(CmdTaskRunAllByRange, func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			args := in.Args()
 			if args.Len() < 2 {
 				return fmt.Errorf("usage: run-all-by-range <start> <end>  (time format: %s)", rangeLayout)
@@ -201,11 +220,13 @@ func (c *TaskCommand) runAllByRangeCmd() *cli.Command {
 	}
 }
 
-func (c *TaskCommand) listTasksCmd() *cli.Command {
+// ListTasksCmd Builds the "list-tasks" subcommand: it lists every registered
+// task and the tables it watches.
+func (c *TaskCommand) ListTasksCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "list-tasks",
+		Name:  CmdTaskListTasks,
 		Usage: "List all registered tasks and their watched tables",
-		Action: WithExecutionStats("list-tasks", func(_ context.Context, _ *cli.Input, out *cli.Output) error {
+		Action: WithExecutionStats(CmdTaskListTasks, func(_ context.Context, _ *cli.Input, out *cli.Output) error {
 			if len(c.tasks) == 0 {
 				out.Info("No tasks registered.")
 				return nil

@@ -40,17 +40,6 @@ func Flags() []cli.Flag {
 	}
 }
 
-// needsNoConfig reports whether the command line asks for the builtin help or
-// version output. They print from the command tree alone, so a configuration file
-// that is missing or unreadable should not stop them.
-func needsNoConfig(in *cli.Input) bool {
-	switch in.Args().First() {
-	case "help", "version":
-		return true
-	}
-	return false
-}
-
 // Before is the root Before hook: it reads the configuration once per invocation
 // and puts it in the context, before any subcommand runs.
 func Before(ctx context.Context, in *cli.Input, _ *cli.Output) (context.Context, error) {
