@@ -43,7 +43,7 @@ func Flags() []cli.Flag {
 // Before is the root Before hook: it reads the configuration once per invocation
 // and puts it in the context, before any subcommand runs.
 func Before(ctx context.Context, in *cli.Input, _ *cli.Output) (context.Context, error) {
-	if needsNoConfig(in) {
+	if NeedsNoConfig(in) {
 		return ctx, nil
 	}
 	cfg, err := config.Load(in.String(FlagConfig))

@@ -54,7 +54,7 @@ func LoadTaskConfig(path string) (*TaskConfig, error) {
 // tasks read from. The other subcommands only need the tasks.
 func TaskBefore(taskCommand *TaskCommand) cli.BeforeFunc {
 	return func(ctx context.Context, in *cli.Input, _ *cli.Output) (context.Context, error) {
-		if needsNoConfig(in) {
+		if NeedsNoConfig(in) {
 			return ctx, nil
 		}
 		cfg, err := LoadTaskConfig(in.String(TaskConfigFlag))
@@ -64,7 +64,7 @@ func TaskBefore(taskCommand *TaskCommand) cli.BeforeFunc {
 		if err := taskCommand.AppendTasks(cfg.BuildTasks()...); err != nil {
 			return ctx, err
 		}
-		if in.Args().First() != "" && in.Args().First() != CmdTaskRun {
+		if !NeedsConsumer(in) {
 			return ctx, nil
 		}
 		eventConsumer, err := consumer.NewConsumer(cfg.Consumer)
