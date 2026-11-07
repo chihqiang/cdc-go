@@ -143,3 +143,36 @@ func TestConfigFileLoads(t *testing.T) {
 	assert.Equal(t, "127.0.0.1:3306", cfg.Source.Mysql.Addr)
 	assert.Equal(t, uint32(0), cfg.Source.Mysql.ServerID)
 }
+
+func TestConfig_StringShowsWhatWasLoaded(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	content := `store:
+  type: file
+  file:
+    dir: /tmp/cdc-test
+source:
+  type: mysql
+  mysql:
+    addr: "127.0.0.1:3306"
+    user: "root"
+    password: "testpass"
+producer:
+  type: stdout
+`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+
+	got := cfg.String()
+
+	// The log has to show every section the program runs with, not only the
+	// source the binlog reader reports on its own.
+	assert.Contains(t, got, `"store"`)
+	assert.Contains(t, got, `"type":"file"`)
+	assert.Contains(t, got, `"type":"mysql"`)
+	assert.Contains(t, got, `"addr":"127.0.0.1:3306"`)
+	assert.Contains(t, got, `"password":"testpass"`)
+	assert.Contains(t, got, `"type":"stdout"`)
+}
