@@ -123,7 +123,7 @@ func (c *TaskCommand) runByPkCmd() *cli.Command {
 		Name:      "run-by-pk",
 		Usage:     "Execute one task for a row of its main table",
 		ArgsUsage: "<task-name> <primary-key-value>",
-		Action: c.withExecutionStats("run-by-pk", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
+		Action: WithExecutionStats("run-by-pk", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			args := in.Args()
 			if args.Len() < 2 {
 				return fmt.Errorf("usage: run-by-pk <task-name> <primary-key-value>")
@@ -144,7 +144,7 @@ func (c *TaskCommand) runByRangeCmd() *cli.Command {
 		Name:      "run-by-range",
 		Usage:     "Execute one task for rows of its main table in a time range",
 		ArgsUsage: "<task-name> <start> <end>",
-		Action: c.withExecutionStats("run-by-range", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
+		Action: WithExecutionStats("run-by-range", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			args := in.Args()
 			if args.Len() < 3 {
 				return fmt.Errorf("usage: run-by-range <task-name> <start> <end>  (time format: %s)", rangeLayout)
@@ -176,7 +176,7 @@ func (c *TaskCommand) runAllByRangeCmd() *cli.Command {
 				"a comma-separated list to leave out several",
 			DefaultText: "none",
 		}},
-		Action: c.withExecutionStats("run-all-by-range", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
+		Action: WithExecutionStats("run-all-by-range", func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 			args := in.Args()
 			if args.Len() < 2 {
 				return fmt.Errorf("usage: run-all-by-range <start> <end>  (time format: %s)", rangeLayout)
@@ -205,7 +205,7 @@ func (c *TaskCommand) listTasksCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "list-tasks",
 		Usage: "List all registered tasks and their watched tables",
-		Action: c.withExecutionStats("list-tasks", func(_ context.Context, _ *cli.Input, out *cli.Output) error {
+		Action: WithExecutionStats("list-tasks", func(_ context.Context, _ *cli.Input, out *cli.Output) error {
 			if len(c.tasks) == 0 {
 				out.Info("No tasks registered.")
 				return nil
@@ -231,7 +231,12 @@ func (c *TaskCommand) listTasksCmd() *cli.Command {
 	}
 }
 
-func (c *TaskCommand) withExecutionStats(name string, action func(context.Context, *cli.Input, *cli.Output) error) func(context.Context, *cli.Input, *cli.Output) error {
+// WithExecutionStats Wraps a command action so that it reports how long it ran
+// and what it allocated before returning, whether it failed or not.
+//
+// The action's own result is returned unchanged, and the report goes to the
+// command's output, so any command can wrap its action with it.
+func WithExecutionStats(name string, action cli.ActionFunc) cli.ActionFunc {
 	return func(ctx context.Context, in *cli.Input, out *cli.Output) error {
 		start := time.Now()
 		var before runtime.MemStats
