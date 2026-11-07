@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/chihqiang/cdc-go/queue/producer"
@@ -42,4 +43,19 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to load configuration from %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// String Writes the configuration as one line of JSON, for the startup log.
+//
+// It is what the program runs with: the file as it was read, with the
+// environment already expanded and the defaults already applied, so a value
+// that came from the environment shows up here rather than in the file.
+func (c *Config) String() string {
+	data, err := json.Marshal(c)
+	if err != nil {
+		// Every field of the configuration can be written as JSON; this is here
+		// so that the startup log cannot be what stops the program.
+		return fmt.Sprintf("%+v (failed to write as JSON: %v)", *c, err)
+	}
+	return string(data)
 }
