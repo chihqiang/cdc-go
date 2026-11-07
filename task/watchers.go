@@ -1,13 +1,9 @@
 package task
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/chihqiang/cdc-go/types"
 )
@@ -211,57 +207,17 @@ func (w watcher) keyRole() string {
 	return "ref_column"
 }
 
-// runEach Runs fn for every watcher, each in its own goroutine, and collects what
-// they report in the order the watchers are in.
+// mainPkVal Reads the value of the main table's row a change is about, and
+// reports whether the change carries it at all.
 //
-// The tasks of one change are independent of each other, so waiting for one to
-// finish before starting the next only adds their durations together; the
-// watchers are few, so one goroutine each is enough. The errors are put back in
-// the order of the watchers, so a failing run is reported the same way every
-// time even though the tasks finished in another order.
-//
-// Every goroutine started here is waited for, so a run that returns leaves
-// nothing of itself behind. Stopping one is the work of the context: the tasks
-// are given it, and a task that returns when it is canceled is what lets the
-// shutdown finish -- there is no way to take a goroutine back.
-func runEach(ctx context.Context, watchers []watcher, fn func(watcher) error) error {
-	// Nothing is started for a run that was already given up on: a shutdown that
-	// got this far should not see work begin.
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	errs := make([]error, len(watchers))
-
-	var wg sync.WaitGroup
-	wg.Add(len(watchers))
-	for i, w := range watchers {
-		go func() {
-			defer wg.Done()
-			errs[i] = fn(w)
-		}()
-	}
-	wg.Wait()
-
-	return errors.Join(errs...)
-}
-
-// runTask Runs one task for one row of its main table, and wraps what it reports
-// with what the run was about.
-func runTask(ctx context.Context, w watcher, tableKey string, row types.EventRowData, mainPkVal types.PrimaryKey) error {
-	if err := w.task.RunByPrimaryKey(ctx, w.table, row, mainPkVal); err != nil {
-		return fmt.Errorf("the task %q (%T) failed for the row %v of %s: %w",
-			w.taskName, w.task, mainPkVal, tableKey, err)
-	}
-	return nil
-}
-
-// runTaskRange Runs one task for a time range of one of its tables, and wraps
-// what it reports with what the run was about.
-func runTaskRange(ctx context.Context, w watcher, tableKey string, start, end time.Time) error {
-	if err := w.task.RunByTimeRange(ctx, w.table, start, end); err != nil {
-		return fmt.Errorf("the task %q (%T) failed for %s to %s of %s: %w",
-			w.taskName, w.task, start, end, tableKey, err)
-	}
-	return nil
+// A change of the main table names that row with its primary key, and a change
+// of a sub table names it with the column pointing at it. An update carries the
+// values the row has now, so a change that moved a sub table row to another main
+// row names the one it moved to: the main row it came from is not run again.
+func (w watcher) mainPkVal(event types.EventData) (types.PrimaryKey, bool) {
+	value, found := event.Row.Data[w.keyColumn()]
+	key := types.NewPrimaryKey(value)
+	// An empty name is no more a row than a missing one: a primary key is never
+	// an empty string.
+	return key, found && !key.IsEmpty()
 }

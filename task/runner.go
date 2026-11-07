@@ -114,8 +114,8 @@ func (r *Runner) RunByPrimaryKey(ctx context.Context, table string, row types.Ev
 		return err
 	}
 
-	return runEach(ctx, watchers, func(w watcher) error {
-		return runTask(ctx, w, table, row, mainPkVal)
+	return r.runEach(ctx, watchers, func(w watcher) error {
+		return r.runTask(ctx, w, table, row, mainPkVal)
 	})
 }
 
@@ -139,7 +139,7 @@ func (r *Runner) RunTaskByPrimaryKey(ctx context.Context, taskName string, row t
 	}
 
 	table := tableKeyOf(w.table.Database, w.table.Name)
-	return runTask(ctx, w, table, row, mainPkVal)
+	return r.runTask(ctx, w, table, row, mainPkVal)
 }
 
 // RunByTimeRange Executes every task watching table for the rows of that table
@@ -165,8 +165,8 @@ func (r *Runner) RunByTimeRange(ctx context.Context, table string, start, end ti
 		return err
 	}
 
-	return runEach(ctx, watchers, func(w watcher) error {
-		return runTaskRange(ctx, w, table, start, end)
+	return r.runEach(ctx, watchers, func(w watcher) error {
+		return r.runTaskRange(ctx, w, table, start, end)
 	})
 }
 
@@ -189,7 +189,7 @@ func (r *Runner) RunTaskByTimeRange(ctx context.Context, taskName string, start,
 	}
 
 	table := tableKeyOf(w.table.Database, w.table.Name)
-	return runTaskRange(ctx, w, table, start, end)
+	return r.runTaskRange(ctx, w, table, start, end)
 }
 
 // RunAllByTimeRange Executes every task for the rows of every table it watches
@@ -209,8 +209,8 @@ func (r *Runner) RunAllByTimeRange(ctx context.Context, start, end time.Time, ex
 		return fmt.Errorf("the range %s to %s is empty: it ends before it starts", start, end)
 	}
 
-	return runEach(ctx, r.watched.all(exclude...), func(w watcher) error {
-		return runTaskRange(ctx, w, tableKeyOf(w.table.Database, w.table.Name), start, end)
+	return r.runEach(ctx, r.watched.all(exclude...), func(w watcher) error {
+		return r.runTaskRange(ctx, w, tableKeyOf(w.table.Database, w.table.Name), start, end)
 	})
 }
 
@@ -225,7 +225,7 @@ func (r *Runner) handle(ctx context.Context, event types.EventData) error {
 		return nil
 	}
 
-	return runEach(ctx, watchers, func(w watcher) error {
+	return r.runEach(ctx, watchers, func(w watcher) error {
 		mainPkVal, found := w.mainPkVal(event)
 		if !found {
 			// Without it there is no row of the main table to work on: the change
@@ -237,23 +237,63 @@ func (r *Runner) handle(ctx context.Context, event types.EventData) error {
 				key, w.keyColumn(), w.keyRole())
 			return nil
 		}
-		return runTask(ctx, w, key, event.Row, mainPkVal)
+		return r.runTask(ctx, w, key, event.Row, mainPkVal)
 	})
 }
 
-// mainPkVal Reads the value of the main table's row a change is about, and
-// reports whether the change carries it at all.
+// runEach Runs fn for every watcher, each in its own goroutine, and collects what
+// they report in the order the watchers are in.
 //
-// A change of the main table names that row with its primary key, and a change
-// of a sub table names it with the column pointing at it. An update carries the
-// values the row has now, so a change that moved a sub table row to another main
-// row names the one it moved to: the main row it came from is not run again.
-func (w watcher) mainPkVal(event types.EventData) (types.PrimaryKey, bool) {
-	value, found := event.Row.Data[w.keyColumn()]
-	key := types.NewPrimaryKey(value)
-	// An empty name is no more a row than a missing one: a primary key is never
-	// an empty string.
-	return key, found && !key.IsEmpty()
+// The tasks of one change are independent of each other, so waiting for one to
+// finish before starting the next only adds their durations together; the
+// watchers are few, so one goroutine each is enough. The errors are put back in
+// the order of the watchers, so a failing run is reported the same way every
+// time even though the tasks finished in another order.
+//
+// Every goroutine started here is waited for, so a run that returns leaves
+// nothing of itself behind. Stopping one is the work of the context: the tasks
+// are given it, and a task that returns when it is canceled is what lets the
+// shutdown finish -- there is no way to take a goroutine back.
+func (r *Runner) runEach(ctx context.Context, watchers []watcher, fn func(watcher) error) error {
+	// Nothing is started for a run that was already given up on: a shutdown that
+	// got this far should not see work begin.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	errs := make([]error, len(watchers))
+
+	var wg sync.WaitGroup
+	wg.Add(len(watchers))
+	for i, w := range watchers {
+		go func() {
+			defer wg.Done()
+			errs[i] = fn(w)
+		}()
+	}
+	wg.Wait()
+
+	return errors.Join(errs...)
+}
+
+// runTask Runs one task for one row of its main table, and wraps what it reports
+// with what the run was about.
+func (r *Runner) runTask(ctx context.Context, w watcher, tableKey string, row types.EventRowData, mainPkVal types.PrimaryKey) error {
+	if err := w.task.RunByPrimaryKey(ctx, w.table, row, mainPkVal); err != nil {
+		return fmt.Errorf("the task %q (%T) failed for the row %v of %s: %w",
+			w.taskName, w.task, mainPkVal, tableKey, err)
+	}
+	return nil
+}
+
+// runTaskRange Runs one task for a time range of one of its tables, and wraps
+// what it reports with what the run was about.
+func (r *Runner) runTaskRange(ctx context.Context, w watcher, tableKey string, start, end time.Time) error {
+	if err := w.task.RunByTimeRange(ctx, w.table, start, end); err != nil {
+		return fmt.Errorf("the task %q (%T) failed for %s to %s of %s: %w",
+			w.taskName, w.task, start, end, tableKey, err)
+	}
+	return nil
 }
 
 // Close Stops the consumption and releases the consumer.

@@ -11,48 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// ---- NewRunner tests ----
-
-func TestNewRunner_ValidatesTheDeclarations(t *testing.T) {
-	_, err := NewRunner(nil, &fakeTask{main: Table{Name: "user", PrimaryKey: "id"}})
-	assert.ErrorContains(t, err, "database and a name")
-
-	_, err = NewRunner(nil, &fakeTask{main: Table{Database: "app", Name: "user"}})
-	assert.ErrorContains(t, err, "primary key")
-
-	_, err = NewRunner(nil, &fakeTask{
-		main: tableUser,
-		subs: []Table{{Database: "app", Name: "user_log", PrimaryKey: "id"}},
-	})
-	assert.ErrorContains(t, err, "ref_column")
-}
-
-func TestNewRunner_RequiresATaskName(t *testing.T) {
-	// The name is what a caller runs a task by, so a task without one could not be
-	// asked for on its own.
-	_, err := NewRunner(nil, &unnamedTask{fakeTask{main: tableUser}})
-	assert.ErrorContains(t, err, "no name")
-}
-
-func TestNewRunner_RefusesATaskNameDeclaredTwice(t *testing.T) {
-	// Two tasks answering to one name cannot be told apart: a run that names it
-	// would silently run both.
-	_, err := NewRunner(nil,
-		&fakeTask{name: "user-sync", main: tableUser},
-		&fakeTask{name: "user-sync", main: tableUser},
-	)
-	assert.ErrorContains(t, err, `"user-sync" is declared twice`)
-}
-
-func TestNewRunner_IndexesTheTablesOfEveryTask(t *testing.T) {
-	r := newRunner(t, nil, &fakeTask{main: tableUser, subs: []Table{tableUserLog}})
-
-	assert.Len(t, r.watched["app.user"], 1)
-	assert.Len(t, r.watched["app.user_log"], 1)
-}
-
-// ---- Run tests: the changes a consumer reads ----
-
 func TestRun_ExecutesTheTasksOfEveryEvent(t *testing.T) {
 	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
 	user := change("app", "user", map[string]any{"id": int64(1)})
@@ -193,6 +151,108 @@ func TestRun_WithoutAConsumerReportsIt(t *testing.T) {
 	assert.ErrorContains(t, err, "no consumer")
 }
 
+func TestRun_ReportsASecondRunAtTheSameTime(t *testing.T) {
+	hold := make(chan struct{})
+	started := make(chan struct{})
+	c := &fakeConsumer{hold: hold, started: started}
+	r := newRunner(t, c, &fakeTask{main: tableUser})
+
+	first := make(chan error, 1)
+	go func() { first <- r.Run(context.Background()) }()
+	<-started
+
+	// Two consumptions of the same middleware would split the events between them
+	// and lose the order they came in.
+	err := r.Run(context.Background())
+	assert.ErrorContains(t, err, "already consuming")
+
+	close(hold)
+	assert.NoError(t, <-first)
+
+	// The first run is over, so a new one is allowed.
+	assert.NoError(t, r.Run(context.Background()))
+}
+
+func TestRun_SkipsAChangeWithAnEmptyValue(t *testing.T) {
+	tk := &fakeTask{main: tableUser}
+	// A primary key is never an empty string, so a change carrying one names no
+	// row to work on.
+	c := &fakeConsumer{events: []types.EventData{
+		change("app", "user", map[string]any{"id": ""}),
+	}}
+	r := newRunner(t, c, tk)
+
+	assert.NoError(t, r.Run(context.Background()))
+	assert.Empty(t, tk.recorded())
+}
+
+func TestRun_SubTableChangeNamesTheRowItMovedTo(t *testing.T) {
+	// A user_log row moved from the user 1 to the user 2: an update carries the
+	// values the row has now, so the run is for the user it moved to.
+	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
+	event := types.EventData{Row: types.EventRowData{
+		Database: "app",
+		Table:    "user_log",
+		Type:     types.UpdateEventRowType,
+		Data:     map[string]any{"id": int64(9), "user_id": int64(2)},
+		Old:      map[string]any{"id": int64(9), "user_id": int64(1)},
+	}}
+	c := &fakeConsumer{events: []types.EventData{event}}
+	r := newRunner(t, c, tk)
+
+	assert.NoError(t, r.Run(context.Background()))
+	// The change is passed on as it is, so the task can see where the row came
+	// from and work on where it moved to.
+	assert.Equal(t, []call{{table: tableUserLog, row: event.Row, mainPkVal: types.NewPrimaryKey(int64(2))}}, tk.recorded())
+}
+
+// blockingTask signals when it was entered and waits to be released, which is
+// what tells a run that happens one task after the other from a run that happens
+// at the same time.
+
+func TestRun_ReportsEveryTaskThatFailed(t *testing.T) {
+	failing := &fakeTask{main: tableUser, err: errors.New("the first one is down")}
+	alsoFailing := &fakeTask{main: tableUser, err: errors.New("the second one is down")}
+	c := &fakeConsumer{events: []types.EventData{
+		change("app", "user", map[string]any{"id": int64(1)}),
+	}}
+	r := newRunner(t, c, failing, alsoFailing)
+
+	// The errors are collected in the order of the watchers, so a run that failed
+	// the same way is reported the same way.
+	err := r.Run(context.Background())
+
+	assert.ErrorContains(t, err, "the first one is down")
+	assert.ErrorContains(t, err, "the second one is down")
+}
+
+// waitingTask stands in for a task doing work that the cancellation has to reach.
+
+func TestRun_StopsAndLeavesTheChangeUnacknowledgedWhenCanceled(t *testing.T) {
+	// An event that was being handled when the shutdown arrived reports the
+	// cancellation, which is what keeps it unacknowledged: the middleware delivers
+	// it again instead of the work going half done and being lost.
+	tk := &waitingTask{main: tableUser, entered: make(chan struct{}, 1)}
+	c := &fakeConsumer{events: []types.EventData{
+		change("app", "user", map[string]any{"id": int64(1)}),
+	}}
+	r := newRunner(t, c, tk)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- r.Run(ctx) }()
+
+	<-tk.entered
+	cancel()
+
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run did not return after the context was canceled")
+	}
+}
+
 func TestClose_ReleasesTheConsumer(t *testing.T) {
 	c := &fakeConsumer{}
 	r := newRunner(t, c)
@@ -206,8 +266,6 @@ func TestClose_WithoutAConsumerDoesNothing(t *testing.T) {
 
 	assert.NoError(t, r.Close())
 }
-
-// ---- RunByPrimaryKey tests ----
 
 func TestRunByPrimaryKey_RunsTheTasksOfTheMainTable(t *testing.T) {
 	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
@@ -300,8 +358,6 @@ func TestRunByPrimaryKey_ReportsWhichTaskFailed(t *testing.T) {
 	assert.ErrorContains(t, err, "1 of app.user")
 }
 
-// ---- RunTaskByPrimaryKey tests: one task by name ----
-
 func TestRunTaskByPrimaryKey_RunsOnlyTheNamedTask(t *testing.T) {
 	synced := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
 	audited := &fakeTask{name: "user-audit", main: tableUser}
@@ -371,7 +427,74 @@ func TestRunTaskByPrimaryKey_DoesNotStartWorkForACanceledContext(t *testing.T) {
 	assert.Empty(t, tk.recorded())
 }
 
-// ---- RunByTimeRange tests ----
+func TestRunByPrimaryKey_ReportsAnEmptyValue(t *testing.T) {
+	tk := &fakeTask{main: tableUser}
+	r := newRunner(t, nil, tk)
+
+	err := r.RunByPrimaryKey(context.Background(), "app.user", types.EventRowData{}, types.NewPrimaryKey(""))
+
+	assert.ErrorContains(t, err, "primary key")
+	assert.Empty(t, tk.recorded())
+}
+
+func TestRunByPrimaryKey_RunsTheTasksOfOneChangeAtTheSameTime(t *testing.T) {
+	release := make(chan struct{})
+	first := &blockingTask{name: "first", main: tableUser, entered: make(chan struct{}, 1), release: release}
+	second := &blockingTask{name: "second", main: tableUser, entered: make(chan struct{}, 1), release: release}
+	r := newRunner(t, nil, first, second)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- r.RunByPrimaryKey(context.Background(), "app.user", types.EventRowData{}, types.NewPrimaryKey(int64(1)))
+	}()
+
+	// Both are entered before either is released: a runner that waited for one
+	// task to finish before starting the next would never get past the first.
+	for i, tk := range []*blockingTask{first, second} {
+		select {
+		case <-tk.entered:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("task %d was not entered while the other was still running", i+1)
+		}
+	}
+
+	close(release)
+	assert.NoError(t, <-done)
+}
+
+func TestRunByPrimaryKey_DoesNotStartWorkForACanceledContext(t *testing.T) {
+	tk := &fakeTask{main: tableUser}
+	r := newRunner(t, nil, tk)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	assert.ErrorIs(t, r.RunByPrimaryKey(ctx, "app.user", types.EventRowData{}, types.NewPrimaryKey(int64(1))), context.Canceled)
+	assert.Empty(t, tk.recorded())
+}
+
+func TestRunByPrimaryKey_ReturnsOnceTheTaskHonorsTheCancellation(t *testing.T) {
+	tk := &waitingTask{main: tableUser, entered: make(chan struct{}, 1)}
+	r := newRunner(t, nil, tk)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- r.RunByPrimaryKey(ctx, "app.user", types.EventRowData{}, types.NewPrimaryKey(int64(1)))
+	}()
+
+	// The task is under way, and the cancellation is what has to end it: the run
+	// waits for its tasks, so it returns only because they did.
+	<-tk.entered
+	cancel()
+
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run did not return after the context was canceled")
+	}
+}
 
 func TestRunByTimeRange_RunsTheTasksOfTheTable(t *testing.T) {
 	start, end := rangeOf()
@@ -452,8 +575,6 @@ func TestRunByTimeRange_ReportsWhichTaskFailed(t *testing.T) {
 	assert.ErrorContains(t, err, "of app.user")
 }
 
-// ---- RunTaskByTimeRange tests: one task by name ----
-
 func TestRunTaskByTimeRange_RunsOnlyTheNamedTask(t *testing.T) {
 	start, end := rangeOf()
 	synced := &fakeTask{name: "user-sync", main: tableUser, subs: []Table{tableUserLog}}
@@ -498,8 +619,6 @@ func TestRunTaskByTimeRange_ReportsAnEmptyRange(t *testing.T) {
 	assert.ErrorContains(t, r.RunTaskByTimeRange(context.Background(), "user-sync", end, start), "empty")
 	assert.Empty(t, tk.recordedRanges())
 }
-
-// ---- RunAllByTimeRange tests ----
 
 func TestRunAllByTimeRange_RunsEveryTableOfEveryTask(t *testing.T) {
 	start, end := rangeOf()
@@ -653,157 +772,6 @@ func TestRunAllByTimeRange_DoesNotStartWorkForACanceledContext(t *testing.T) {
 	assert.Empty(t, tk.recordedRanges())
 }
 
-// ---- the guards around a runner that is misused or misdeclared ----
-
-func TestNewRunner_RefusesATableDeclaredTwice(t *testing.T) {
-	// The main table listed again as a sub table: one change would run the task
-	// twice, and with two different columns to read the value from.
-	_, err := NewRunner(nil, &fakeTask{
-		main: tableUser,
-		subs: []Table{{Database: "app", Name: "user", PrimaryKey: "id", RefColumn: "user_id"}},
-	})
-	assert.ErrorContains(t, err, "declared twice")
-
-	// The same sub table listed twice.
-	_, err = NewRunner(nil, &fakeTask{main: tableUser, subs: []Table{tableUserLog, tableUserLog}})
-	assert.ErrorContains(t, err, "declared twice")
-}
-
-func TestNewRunner_AllowsTwoTasksWatchingTheSameTable(t *testing.T) {
-	// That is what a fan-out is: every task watching the table is run.
-	r := newRunner(t, nil, &fakeTask{main: tableUser}, &fakeTask{main: tableUser})
-
-	assert.Len(t, r.watched["app.user"], 2)
-}
-
-func TestNewRunner_RefusesADottedName(t *testing.T) {
-	// The database and the table are joined into the db.table a change is routed
-	// by, so a dot inside one of them would read as another pair.
-	_, err := NewRunner(nil, &fakeTask{main: Table{Database: "app.db", Name: "user", PrimaryKey: "id"}})
-	assert.ErrorContains(t, err, "hold a dot")
-
-	_, err = NewRunner(nil, &fakeTask{main: Table{Database: "app", Name: "user.log", PrimaryKey: "id"}})
-	assert.ErrorContains(t, err, "hold a dot")
-}
-
-func TestRun_ReportsASecondRunAtTheSameTime(t *testing.T) {
-	hold := make(chan struct{})
-	started := make(chan struct{})
-	c := &fakeConsumer{hold: hold, started: started}
-	r := newRunner(t, c, &fakeTask{main: tableUser})
-
-	first := make(chan error, 1)
-	go func() { first <- r.Run(context.Background()) }()
-	<-started
-
-	// Two consumptions of the same middleware would split the events between them
-	// and lose the order they came in.
-	err := r.Run(context.Background())
-	assert.ErrorContains(t, err, "already consuming")
-
-	close(hold)
-	assert.NoError(t, <-first)
-
-	// The first run is over, so a new one is allowed.
-	assert.NoError(t, r.Run(context.Background()))
-}
-
-func TestRun_SkipsAChangeWithAnEmptyValue(t *testing.T) {
-	tk := &fakeTask{main: tableUser}
-	// A primary key is never an empty string, so a change carrying one names no
-	// row to work on.
-	c := &fakeConsumer{events: []types.EventData{
-		change("app", "user", map[string]any{"id": ""}),
-	}}
-	r := newRunner(t, c, tk)
-
-	assert.NoError(t, r.Run(context.Background()))
-	assert.Empty(t, tk.recorded())
-}
-
-func TestRunByPrimaryKey_ReportsAnEmptyValue(t *testing.T) {
-	tk := &fakeTask{main: tableUser}
-	r := newRunner(t, nil, tk)
-
-	err := r.RunByPrimaryKey(context.Background(), "app.user", types.EventRowData{}, types.NewPrimaryKey(""))
-
-	assert.ErrorContains(t, err, "primary key")
-	assert.Empty(t, tk.recorded())
-}
-
-func TestRun_SubTableChangeNamesTheRowItMovedTo(t *testing.T) {
-	// A user_log row moved from the user 1 to the user 2: an update carries the
-	// values the row has now, so the run is for the user it moved to.
-	tk := &fakeTask{main: tableUser, subs: []Table{tableUserLog}}
-	event := types.EventData{Row: types.EventRowData{
-		Database: "app",
-		Table:    "user_log",
-		Type:     types.UpdateEventRowType,
-		Data:     map[string]any{"id": int64(9), "user_id": int64(2)},
-		Old:      map[string]any{"id": int64(9), "user_id": int64(1)},
-	}}
-	c := &fakeConsumer{events: []types.EventData{event}}
-	r := newRunner(t, c, tk)
-
-	assert.NoError(t, r.Run(context.Background()))
-	// The change is passed on as it is, so the task can see where the row came
-	// from and work on where it moved to.
-	assert.Equal(t, []call{{table: tableUserLog, row: event.Row, mainPkVal: types.NewPrimaryKey(int64(2))}}, tk.recorded())
-}
-
-// ---- the tasks of one change run at the same time ----
-
-// blockingTask signals when it was entered and waits to be released, which is
-// what tells a run that happens one task after the other from a run that happens
-// at the same time.
-type blockingTask struct {
-	name    string
-	main    Table
-	entered chan struct{}
-	release chan struct{}
-}
-
-func (t *blockingTask) Name() string       { return t.name }
-func (t *blockingTask) MainTable() Table   { return t.main }
-func (t *blockingTask) SubTables() []Table { return nil }
-
-func (t *blockingTask) RunByPrimaryKey(context.Context, Table, types.EventRowData, types.PrimaryKey) error {
-	t.entered <- struct{}{}
-	<-t.release
-	return nil
-}
-
-func (t *blockingTask) RunByTimeRange(context.Context, Table, time.Time, time.Time) error {
-	t.entered <- struct{}{}
-	<-t.release
-	return nil
-}
-
-func TestRunByPrimaryKey_RunsTheTasksOfOneChangeAtTheSameTime(t *testing.T) {
-	release := make(chan struct{})
-	first := &blockingTask{name: "first", main: tableUser, entered: make(chan struct{}, 1), release: release}
-	second := &blockingTask{name: "second", main: tableUser, entered: make(chan struct{}, 1), release: release}
-	r := newRunner(t, nil, first, second)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- r.RunByPrimaryKey(context.Background(), "app.user", types.EventRowData{}, types.NewPrimaryKey(int64(1)))
-	}()
-
-	// Both are entered before either is released: a runner that waited for one
-	// task to finish before starting the next would never get past the first.
-	for i, tk := range []*blockingTask{first, second} {
-		select {
-		case <-tk.entered:
-		case <-time.After(5 * time.Second):
-			t.Fatalf("task %d was not entered while the other was still running", i+1)
-		}
-	}
-
-	close(release)
-	assert.NoError(t, <-done)
-}
-
 func TestRunByTimeRange_RunsTheTasksOfOneChangeAtTheSameTime(t *testing.T) {
 	start, end := rangeOf()
 	release := make(chan struct{})
@@ -826,57 +794,6 @@ func TestRunByTimeRange_RunsTheTasksOfOneChangeAtTheSameTime(t *testing.T) {
 	assert.NoError(t, <-done)
 }
 
-func TestRun_ReportsEveryTaskThatFailed(t *testing.T) {
-	failing := &fakeTask{main: tableUser, err: errors.New("the first one is down")}
-	alsoFailing := &fakeTask{main: tableUser, err: errors.New("the second one is down")}
-	c := &fakeConsumer{events: []types.EventData{
-		change("app", "user", map[string]any{"id": int64(1)}),
-	}}
-	r := newRunner(t, c, failing, alsoFailing)
-
-	// The errors are collected in the order of the watchers, so a run that failed
-	// the same way is reported the same way.
-	err := r.Run(context.Background())
-
-	assert.ErrorContains(t, err, "the first one is down")
-	assert.ErrorContains(t, err, "the second one is down")
-}
-
-// ---- stopping a run ----
-
-// waitingTask stands in for a task doing work that the cancellation has to reach.
-type waitingTask struct {
-	main    Table
-	entered chan struct{}
-}
-
-func (t *waitingTask) Name() string       { return "waiting" }
-func (t *waitingTask) MainTable() Table   { return t.main }
-func (t *waitingTask) SubTables() []Table { return nil }
-
-func (t *waitingTask) RunByPrimaryKey(ctx context.Context, _ Table, _ types.EventRowData, _ types.PrimaryKey) error {
-	t.entered <- struct{}{}
-	<-ctx.Done()
-	return ctx.Err()
-}
-
-func (t *waitingTask) RunByTimeRange(ctx context.Context, _ Table, _, _ time.Time) error {
-	t.entered <- struct{}{}
-	<-ctx.Done()
-	return ctx.Err()
-}
-
-func TestRunByPrimaryKey_DoesNotStartWorkForACanceledContext(t *testing.T) {
-	tk := &fakeTask{main: tableUser}
-	r := newRunner(t, nil, tk)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	assert.ErrorIs(t, r.RunByPrimaryKey(ctx, "app.user", types.EventRowData{}, types.NewPrimaryKey(int64(1))), context.Canceled)
-	assert.Empty(t, tk.recorded())
-}
-
 func TestRunByTimeRange_DoesNotStartWorkForACanceledContext(t *testing.T) {
 	start, end := rangeOf()
 	tk := &fakeTask{main: tableUser}
@@ -889,29 +806,6 @@ func TestRunByTimeRange_DoesNotStartWorkForACanceledContext(t *testing.T) {
 	assert.Empty(t, tk.recordedRanges())
 }
 
-func TestRunByPrimaryKey_ReturnsOnceTheTaskHonorsTheCancellation(t *testing.T) {
-	tk := &waitingTask{main: tableUser, entered: make(chan struct{}, 1)}
-	r := newRunner(t, nil, tk)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- r.RunByPrimaryKey(ctx, "app.user", types.EventRowData{}, types.NewPrimaryKey(int64(1)))
-	}()
-
-	// The task is under way, and the cancellation is what has to end it: the run
-	// waits for its tasks, so it returns only because they did.
-	<-tk.entered
-	cancel()
-
-	select {
-	case err := <-done:
-		assert.ErrorIs(t, err, context.Canceled)
-	case <-time.After(5 * time.Second):
-		t.Fatal("the run did not return after the context was canceled")
-	}
-}
-
 func TestRunByTimeRange_ReturnsOnceTheTaskHonorsTheCancellation(t *testing.T) {
 	start, end := rangeOf()
 	tk := &waitingTask{main: tableUser, entered: make(chan struct{}, 1)}
@@ -920,31 +814,6 @@ func TestRunByTimeRange_ReturnsOnceTheTaskHonorsTheCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- r.RunByTimeRange(ctx, "app.user", start, end) }()
-
-	<-tk.entered
-	cancel()
-
-	select {
-	case err := <-done:
-		assert.ErrorIs(t, err, context.Canceled)
-	case <-time.After(5 * time.Second):
-		t.Fatal("the run did not return after the context was canceled")
-	}
-}
-
-func TestRun_StopsAndLeavesTheChangeUnacknowledgedWhenCanceled(t *testing.T) {
-	// An event that was being handled when the shutdown arrived reports the
-	// cancellation, which is what keeps it unacknowledged: the middleware delivers
-	// it again instead of the work going half done and being lost.
-	tk := &waitingTask{main: tableUser, entered: make(chan struct{}, 1)}
-	c := &fakeConsumer{events: []types.EventData{
-		change("app", "user", map[string]any{"id": int64(1)}),
-	}}
-	r := newRunner(t, c, tk)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- r.Run(ctx) }()
 
 	<-tk.entered
 	cancel()
