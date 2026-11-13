@@ -1,7 +1,15 @@
 # cdc-go
 
 ![Go 1.25+](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white)
+[![Go Reference](https://pkg.go.dev/badge/github.com/chihqiang/cdc-go.svg)](https://pkg.go.dev/github.com/chihqiang/cdc-go)
+[![Latest Release](https://img.shields.io/github/v/release/chihqiang/cdc-go)](https://github.com/chihqiang/cdc-go/releases/latest)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)
+![MySQL](https://img.shields.io/badge/MySQL-supported-4479A1?logo=mysql&logoColor=white)
+![Kafka](https://img.shields.io/badge/Kafka-supported-231F20?logo=apachekafka&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-supported-DC382D?logo=redis&logoColor=white)
+![RabbitMQ](https://img.shields.io/badge/RabbitMQ-supported-FF6600?logo=rabbitmq&logoColor=white)
+![RocketMQ](https://img.shields.io/badge/RocketMQ-supported-D77310?logo=apacherocketmq&logoColor=white)
+![Pulsar](https://img.shields.io/badge/Pulsar-supported-188FFF?logo=apachepulsar&logoColor=white)
 
 A lightweight Change Data Capture (CDC) service for MySQL, written in Go. It
 tails the MySQL binary log, converts every row change into one stable JSON
