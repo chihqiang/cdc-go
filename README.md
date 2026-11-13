@@ -1,6 +1,9 @@
 # cdc-go
 
 ![Go 1.25+](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white)
+[![Go Reference](https://pkg.go.dev/badge/github.com/chihqiang/cdc-go.svg)](https://pkg.go.dev/github.com/chihqiang/cdc-go)
+[![Latest Release](https://img.shields.io/github/v/release/chihqiang/cdc-go)](https://github.com/chihqiang/cdc-go/releases/latest)
+[![Tests](https://github.com/chihqiang/cdc-go/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/chihqiang/cdc-go/actions/workflows/test.yml)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)
 
 A lightweight Change Data Capture (CDC) service for MySQL, written in Go. It
